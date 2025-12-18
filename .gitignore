@@ -1,0 +1,96 @@
+# ===============================
+# Python
+# ===============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# ===============================
+# Jupyter Notebook
+# ===============================
+.ipynb_checkpoints/
+
+# Optional: ignore all notebooks outputs
+# (use nbstripout if you want to keep notebooks but remove outputs)
+# *.ipynb
+
+# ===============================
+# Data / Results
+# ===============================
+data/
+datasets/
+*.csv
+*.tsv
+*.xlsx
+*.parquet
+*.h5
+*.json
+
+DATA_SYSTEM_LIDL/
+
+# ===============================
+# Model / ML artifacts
+# ===============================
+*.pkl
+*.joblib
+*.hdf5
+*.pt
+*.pth
+*.onnx
+
+# ===============================
+# Logs & temp files
+# ===============================
+*.log
+*.tmp
+*.bak
+*.swp
+
+# ===============================
+# OS / Editor
+# ===============================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ===============================
+# Environment / Secrets
+# ===============================
+.env
+.env.*
+*.key
+*.pem
+
+# ===============================
+# Coverage / Testing
+# ===============================
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.mypy_cache/
+
+# ===============================
+# LaTeX / PDF (if using reports)
+# ===============================
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.toc
+*.synctex.gz
