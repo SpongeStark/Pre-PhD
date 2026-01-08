@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from skforecast.recursive import ForecasterRecursive
 from skforecast.preprocessing import RollingFeatures
 from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
 
 from data_proc import convert_for_EV
 
@@ -15,7 +16,7 @@ from data_proc import convert_for_EV
 if __name__ == "__main__":
     args = SimpleNamespace(
         root_proj = Path("/Users/yk/Documents/Projects/Pre-PhD"),
-        out = "point01",
+        out = "point02",
         data = Path("/Users/yk/Documents/Projects/Pre-PhD") / "DATA_SYSTEM_LIDL" / "Raw_chargelogs" / "Chargelogs 2023.xlsx"
     )
     # root_proj = Path("/Users/yk/Documents/Projects/Pre-PhD")
@@ -29,9 +30,19 @@ if __name__ == "__main__":
     df_train = converted_df.iloc[:-step]
     df_test = converted_df.iloc[-step:]
     # create model
+    # regressor = RandomForestRegressor(random_state=42, verbose=2, n_jobs=-1)
+    regressor = XGBRegressor(
+        n_estimators=500,
+        learning_rate=0.05,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective='reg:squarederror',
+        random_state=42
+    )
     forecaster = ForecasterRecursive(
         # create the estimator, verbose for show the logs, n_jobs=-1 for using all processors
-        estimator = RandomForestRegressor(random_state=42, verbose=1, n_jobs=-1),
+        estimator = regressor,
         lags = int((60/15)*24*7), # use previous one week
         window_features = RollingFeatures(stats=['mean', 'std'], window_sizes=int((60/15)*24*30))
     )
@@ -47,12 +58,12 @@ if __name__ == "__main__":
         # log
         log = {
             "metadata": {
-                "description": "recursive random forest regresion",
+                "description": "recursive XGBRegressor",
                 "lags": int((60/15)*24*7),
                 "window_features": {
                     "type": "rolling",
                     "stats": ["mean"],
-                    "window_size": int((60/15)*24)
+                    "window_size": int((60/15)*24*30)
                 },
                 "freq": "15min"
             },
@@ -60,12 +71,13 @@ if __name__ == "__main__":
         }
         # save log
         with open(output_dir/"log.json", "w") as f:
-            json.dump(log, f, indent=2)
+            json.dump(log, f, indent=2) # indent=2 for format
         print("End of training")
     else:
-        # 加载模型 | load model
-        forecaster = jb.load(output_dir/"model.joblib")
-        # load log
-        with open(output_dir/"log.json", "r") as f:
-            log = json.load(f)
-        print("Loaded")
+        # # 加载模型 | load model
+        # forecaster = jb.load(output_dir/"model.joblib")
+        # # load log
+        # with open(output_dir/"log.json", "r") as f:
+        #     log = json.load(f)
+        # print("Loaded")
+        print(f"The checkpoint \"{args.out}\" has been created !")

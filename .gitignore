@@ -50,6 +50,8 @@ DATA_SYSTEM_LIDL/
 *.pth
 *.onnx
 
+checkpoints/
+
 # ===============================
 # Logs & temp files
 # ===============================
