@@ -16,11 +16,11 @@ if __name__ == "__main__":
     args = SimpleNamespace(
         root_proj = Path("/Users/yk/Documents/Projects/Pre-PhD"),
         out = "point01",
-        year = 2013
+        data = Path("/Users/yk/Documents/Projects/Pre-PhD") / "DATA_SYSTEM_LIDL" / "Raw_chargelogs" / "Chargelogs 2023.xlsx"
     )
     # root_proj = Path("/Users/yk/Documents/Projects/Pre-PhD")
     root_proj = args.root_proj
-    chargelogs = pd.read_excel(root_proj / "DATA_SYSTEM_LIDL" / "Raw_chargelogs" / f"Chargelogs {args.year}.xlsx")
+    chargelogs = pd.read_excel(args.data)
     # convert the data frame
     converted_df = convert_for_EV(chargelogs, bin=15)
     # splite train and test
@@ -30,9 +30,10 @@ if __name__ == "__main__":
     df_test = converted_df.iloc[-step:]
     # create model
     forecaster = ForecasterRecursive(
-        estimator = RandomForestRegressor(random_state=42, verbose=-1),
+        # create the estimator, verbose for show the logs, n_jobs=-1 for using all processors
+        estimator = RandomForestRegressor(random_state=42, verbose=1, n_jobs=-1),
         lags = int((60/15)*24*7), # use previous one week
-        window_features = RollingFeatures(stats=['mean'], window_sizes=int((60/15)*24))
+        window_features = RollingFeatures(stats=['mean', 'std'], window_sizes=int((60/15)*24*30))
     )
     # train
     output_dir = root_proj / "checkpoints" / args.out
