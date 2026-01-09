@@ -16,7 +16,7 @@ from data_proc import convert_for_EV
 if __name__ == "__main__":
     args = SimpleNamespace(
         root_proj = Path("/Users/yk/Documents/Projects/Pre-PhD"),
-        out = "point02",
+        out = "point03",
         data = Path("/Users/yk/Documents/Projects/Pre-PhD") / "DATA_SYSTEM_LIDL" / "Raw_chargelogs" / "Chargelogs 2023.xlsx"
     )
     # root_proj = Path("/Users/yk/Documents/Projects/Pre-PhD")
@@ -33,18 +33,20 @@ if __name__ == "__main__":
     # regressor = RandomForestRegressor(random_state=42, verbose=2, n_jobs=-1)
     regressor = XGBRegressor(
         n_estimators=500,
-        learning_rate=0.05,
-        max_depth=6,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        objective='reg:squarederror',
+        learning_rate=0.01,
+        verbosity=2, 
+        n_jobs=-1,
+        # max_depth=6,
+        # subsample=0.8,
+        # colsample_bytree=0.8,
+        # objective='reg:squarederror',
         random_state=42
     )
     forecaster = ForecasterRecursive(
         # create the estimator, verbose for show the logs, n_jobs=-1 for using all processors
         estimator = regressor,
-        lags = int((60/15)*24*7), # use previous one week
-        window_features = RollingFeatures(stats=['mean', 'std'], window_sizes=int((60/15)*24*30))
+        lags = int((60/15)*24*30), # use previous one week
+        window_features = RollingFeatures(stats=['mean', 'std'], window_sizes=int((60/15)*24*90))
     )
     # train
     output_dir = root_proj / "checkpoints" / args.out
@@ -59,11 +61,11 @@ if __name__ == "__main__":
         log = {
             "metadata": {
                 "description": "recursive XGBRegressor",
-                "lags": int((60/15)*24*7),
+                "lags": int(forecaster.lags[-1]),
                 "window_features": {
-                    "type": "rolling",
-                    "stats": ["mean"],
-                    "window_size": int((60/15)*24*30)
+                    "type": forecaster.window_features[0].__class__.__name__ ,
+                    "stats": forecaster.window_features[0].stats,
+                    "window_size": forecaster.window_features[0].window_sizes
                 },
                 "freq": "15min"
             },
