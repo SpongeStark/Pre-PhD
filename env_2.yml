@@ -1,0 +1,50 @@
+# name: lti
+# dependencies:
+#   - pytorch::pytorch
+#   - pytorch::torchvision
+#   - pytorch::torchaudio
+#   - conda-forge::matplotlib
+#   - conda-forge::numpy
+#   - anaconda::pandas
+#   - anaconda::openpyxl # 读取excel
+#   - anaconda::jupyter
+#   - conda-forge::nbclassic
+#   - conda-forge::tqdm
+#   - conda-forge::scikit-learn
+#   - conda-forge::skforecast
+#   # hugging face
+#   - conda-forge::transformers
+#   - conda-forge::datasets
+
+name: ml-env
+channels:
+  - pytorch
+  - conda-forge
+channel_priority: strict
+
+dependencies:
+  - python=3.10
+
+  # PyTorch (CPU)
+  - pytorch=2.*
+  - torchvision
+  - torchaudio
+
+  # Scientific stack
+  - numpy
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - tqdm
+  - openpyxl
+
+  # Jupyter
+  - jupyter
+  - nbclassic
+
+  # Time series / ML
+  - skforecast
+
+  # Hugging Face
+  - transformers
+  - datasets
