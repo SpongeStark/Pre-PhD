@@ -16,19 +16,21 @@
 #   - conda-forge::transformers
 #   - conda-forge::datasets
 
-name: ml-env
+name: lti
 channels:
   - pytorch
   - conda-forge
-channel_priority: strict
+  - anaconda
+# channel_priority: strict
 
 dependencies:
-  - python=3.10
+  - python
 
   # PyTorch (CPU)
   - pytorch=2.*
   - torchvision
   - torchaudio
+  - cpuonly
 
   # Scientific stack
   - numpy
