@@ -35,6 +35,7 @@ dependencies:
   # Scientific stack
   - numpy
   - xgboost
+  - lightgbm
   - pandas
   - matplotlib
   - scikit-learn
