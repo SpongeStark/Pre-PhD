@@ -1,0 +1,371 @@
+import math
+import random
+import pyomo.environ as pyo
+
+def build_optimization_model(T_horizon, params, PV_forecast, EV_forecast, lambda_buy):
+    """
+    Builds the Pyomo model for the System Model and Optimization Formulation.
+    """
+    model = pyo.ConcreteModel()
+    
+    # ---------------------------------------------------------
+    # 1.1 Sets and Indices 
+    # ---------------------------------------------------------
+    model.T = pyo.Set(initialize=range(1, T_horizon + 1))
+    dt = params['dt'] # Time step duration [h]
+    
+    # ---------------------------------------------------------
+    # 1.3 Decision Variables
+    # ---------------------------------------------------------
+    # Power variables [kW]
+    model.P_grid = pyo.Var(model.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.P_ch = pyo.Var(model.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.P_dis = pyo.Var(model.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.P_curtail = pyo.Var(model.T, domain=pyo.NonNegativeReals, initialize=0.0) # Kept to ensure feasibility
+    
+    # Battery states [kWh] and SoC
+    model.E_B = pyo.Var(model.T, domain=pyo.NonNegativeReals, bounds=(0, params['E_B_max']), initialize=params['E_B_0'])
+    model.SoC = pyo.Var(model.T, bounds=(params['SoC_min'], params['SoC_max']), initialize=0.5)
+    
+    # NEW: Degradation Cost Variables
+    model.delta_DOD = pyo.Var(model.T, domain=pyo.NonNegativeReals, bounds=(0, 1), initialize=0.0)
+    model.N_total = pyo.Var(model.T, domain=pyo.PositiveReals, initialize=17000.0)
+    model.C_DOD = pyo.Var(model.T, domain=pyo.NonNegativeReals, initialize=0.0)
+    model.C_SoC = pyo.Var(model.T, domain=pyo.Reals, initialize=0.0)
+    
+    # ---------------------------------------------------------
+    # 1.5 Power Balance Constraint
+    # ---------------------------------------------------------
+    def power_balance_rule(m, t):
+        # Updated to match Eq (4) exactly with PV inverter efficiency
+        pv_term = (PV_forecast[t] / params['eta_pvinverter']) * params['eta_mppt']
+        left_side = pv_term - m.P_curtail[t] + (m.P_grid[t] * params['eta_ac_dc']) + m.P_dis[t]
+        right_side = (EV_forecast[t] / params['eta_dc_ac']) + m.P_ch[t]
+        return left_side == right_side
+    model.power_balance = pyo.Constraint(model.T, rule=power_balance_rule)
+    
+    # ---------------------------------------------------------
+    # 1.6 Battery Energy Dynamics
+    # ---------------------------------------------------------
+    def battery_dynamics_rule(m, t):
+        if t == 1:
+            return m.E_B[t] == params['E_B_0']
+        else:
+            # Updated to match Eq (5)
+            return m.E_B[t] == m.E_B[t-1] + (m.P_ch[t] * params['eta_c']) * dt - (m.P_dis[t] / params['eta_d']) * dt
+    model.battery_dynamics = pyo.Constraint(model.T, rule=battery_dynamics_rule)
+    
+    # ---------------------------------------------------------
+    # 1.7 State of Charge
+    # ---------------------------------------------------------
+    def soc_rule(m, t):
+        # Eq (10): SoC(t) = E_B(t) / E_B_max
+        return m.SoC[t] * params['E_B_max'] == m.E_B[t]
+    model.soc_constraint = pyo.Constraint(model.T, rule=soc_rule)
+    
+    # ---------------------------------------------------------
+    # NEW: Battery Degradation Cost Model (Eqs 6, 8, 9)
+    # ---------------------------------------------------------
+    def delta_dod_rule(m, t):
+        # Eq (9) - DoD swing for the timestep
+        return m.delta_DOD[t] == (m.P_dis[t] * dt) / params['E_B_max']
+    model.delta_dod_con = pyo.Constraint(model.T, rule=delta_dod_rule)
+
+    def n_total_rule(m, t):
+        # Eq (8) - Polynomial curve for cycle life based on DoD
+        x = m.delta_DOD[t]
+        poly = 1.06*(x**4) - 2.80*(x**3) + 2.66*(x**2) - 1.07*x + 0.17
+        return m.N_total[t] == poly * 1e5
+    model.n_total_con = pyo.Constraint(model.T, rule=n_total_rule)
+
+    def c_dod_rule(m, t):
+        # Eq (9) - Cost of cycle degradation
+        # Cross-multiplied to prevent division-by-variable issues in the solver
+        return m.C_DOD[t] * m.N_total[t] == params['C_0'] * m.delta_DOD[t]
+    model.c_dod_con = pyo.Constraint(model.T, rule=c_dod_rule)
+
+    def c_soc_rule(m, t):
+        # Eq (6) - Cost of calendar degradation based on resting SoC
+        return m.C_SoC[t] == params['C_0'] * ((params['alpha'] * m.SoC[t]) - params['beta']) / (params['CF_max'] * 15 * 8760)
+    model.c_soc_con = pyo.Constraint(model.T, rule=c_soc_rule)
+
+    # ---------------------------------------------------------
+    # 1.10 Power Limits
+    # ---------------------------------------------------------
+    def power_limits_rule(m, t):
+        yield m.P_ch[t] <= params['P_B_max']
+        yield m.P_dis[t] <= params['P_B_max']
+        yield m.P_ch[t] <= (params['P_B_max'] / (1 - params['D_ch'])) * (1 - m.SoC[t])
+        yield m.P_dis[t] <= (params['P_B_max'] / params['D_dis']) * m.SoC[t]
+    model.power_limits = pyo.ConstraintList()
+    for t in model.T:
+        for constr in power_limits_rule(model, t):
+            model.power_limits.add(constr)
+
+    # ---------------------------------------------------------
+    # 1.11 & 1.12 Optional SoC Operating Window
+    # ---------------------------------------------------------
+    def optional_soc_rule(m, t):
+        yield m.SoC[t] >= params['SoC_min']
+        yield m.SoC[t] <= params['SoC_max']
+    model.optional_soc = pyo.ConstraintList()
+    for t in model.T:
+        for constr in optional_soc_rule(model, t):
+            model.optional_soc.add(constr)
+            
+    # ---------------------------------------------------------
+    # 1.4 Objective Function
+    # ---------------------------------------------------------
+    def objective_rule(m):
+        # Eq (2): Grid cost
+        C_grid = sum(m.P_grid[t] * dt * lambda_buy[t] for t in m.T)
+        
+        # Eq (3): Total BES Degradation Cost (Sum of DoD and SoC costs)
+        C_BES = sum(m.C_SoC[t] + m.C_DOD[t] for t in m.T)
+        
+        # Eq (1): Minimize Grid + BES costs
+        return C_grid + C_BES
+    model.objective = pyo.Objective(rule=objective_rule, sense=pyo.minimize)
+
+    return model
+
+# ------------------------------------------------------------------
+# Execution & Parameters Setup
+# ------------------------------------------------------------------
+params_dict = {
+    'dt': 0.25, 
+    'eta_c': 0.975, 
+    'eta_d': 0.975, 
+    'eta_ac_dc': 0.97, 
+    'eta_dc_ac': 0.97, 
+    'eta_mppt': 0.98,
+    'eta_pvinverter': 0.96,  # NEW: Added from Eq 4
+
+    'P_B_max': 10.0, 
+    'E_B_max': 10.0, 
+    'E_B_0': 5.0, 
+    
+    'D_ch': 0.8, 
+    'D_dis': 0.1, 
+    'SoC_min': 0.1, 
+    'SoC_max': 1.0, 
+    
+    # NEW Economic & Tuning Parameters
+    'C_0': 5000.0,           # Battery purchase price (Dummy Value: 5000 EUR)
+    'CF_max': 0.2,           # Maximum capacity fade limit (e.g., 20% degradation = End of Life)
+    'alpha': 0.5,            # Tuning parameter alpha
+    'beta': 0.1              # Tuning parameter beta
+}
+
+import math
+import random
+
+# Optional: Set a random seed for reproducible "randomness"
+random.seed(42)
+
+# 3 Days at 15-min intervals = 288 time steps
+T_horizon = 288
+times = range(1, T_horizon + 1)
+
+PV_data = {}
+EV_data = {}
+lambda_data = {}
+
+for t in times:
+    # Determine which day (1, 2, or 3) and what hour of that day (0.0 to 23.75)
+    day = ((t - 1) // 96) + 1
+    hour = ((t - 1) % 96) * 0.25 
+    
+    # =========================================================
+    # DAY 1: Sunny Weekday & Commuter EV
+    # =========================================================
+    if day == 1:
+        # 1. PV: Perfect Bell Curve (Peak 40 kW)
+        if 6 < hour < 20: 
+            PV_data[t] = max(0.0, 40.0 * math.exp(-0.5 * ((hour - 13.0) / 2.5)**2))
+        else:
+            PV_data[t] = 0.0
+
+        # 2. EV: Commuter Profile
+        if 19.0 <= hour < 22.0:
+            EV_data[t] = 22.0  # Heavy evening charge
+        elif 7.0 <= hour < 8.0:
+            EV_data[t] = 11.0  # Morning pre-conditioning
+        else:
+            EV_data[t] = 0.0
+
+        # 3. Price: Standard TOU
+        if 16.0 <= hour < 22.0:
+            lambda_data[t] = 0.28 
+        elif 6.0 <= hour < 16.0:
+            lambda_data[t] = 0.18 
+        else:
+            lambda_data[t] = 0.12 
+
+    # =========================================================
+    # DAY 2: Cloudy WFH Day & Grid Stress
+    # =========================================================
+    # =========================================================
+    # DAY 2: EV Consumption > PV Production During Daytime
+    # =========================================================
+    elif day == 2:
+        # 1. PV: Moderate sunny day (Peak 12 kW at 13:00)
+        if 6 < hour < 20: 
+            PV_data[t] = max(0.0, 12.0 * math.exp(-0.5 * ((hour - 13.0) / 3.0)**2))
+        else:
+            PV_data[t] = 0.0
+
+        # 2. EV: Heavy daytime charging from 10:00 to 16:00
+        # At 16 kW, the EV demand is always higher than the maximum 12 kW PV generation.
+        if 10.0 <= hour <= 16.0:
+            EV_data[t] = 16.0 
+        elif 19.0 <= hour <= 20.0:
+            EV_data[t] = 5.0 # Minor evening demand just to keep things dynamic
+        else:
+            EV_data[t] = 0.0
+
+        # 3. Price: Standard Time-of-Use pricing
+        if 16.0 <= hour < 22.0:
+            lambda_data[t] = 0.28  # On-peak (Evening)
+        elif 6.0 <= hour < 16.0:
+            lambda_data[t] = 0.18  # Mid-peak (Daytime)
+        else:
+            lambda_data[t] = 0.12  # Off-peak (Night)
+
+    # =========================================================
+    # DAY 3: Weekend (Afternoon Sun & Errands)
+    # =========================================================
+    elif day == 3:
+        # 1. PV: Shifted Afternoon Sun (Peak 30 kW at 15:00)
+        if 7 < hour < 20: 
+            PV_data[t] = max(0.0, 30.0 * math.exp(-0.5 * ((hour - 15.0) / 2.0)**2))
+        else:
+            PV_data[t] = 0.0
+
+        # 2. EV: Errands (Away mid-day, heavy charge at night)
+        if (8.0 <= hour <= 9.0) or (15.0 <= hour <= 17.0):
+            if random.random() < 0.50:
+                EV_data[t] = round(random.uniform(5.0, 15.0), 2)
+            else:
+                EV_data[t] = 0.0
+        elif 20.0 <= hour <= 23.0:
+            EV_data[t] = 15.0 # Prepping for Monday
+        else:
+            EV_data[t] = 0.0
+
+        # 3. Price: Weekend Flat Rate
+        if 17.0 <= hour < 21.0:
+            lambda_data[t] = 0.20 # Mild evening peak
+        else:
+            lambda_data[t] = 0.15 # Flat rate rest of the day
+
+print("Building the optimization model...")
+my_model = build_optimization_model(T_horizon, params_dict, PV_data, EV_data, lambda_data)
+
+print("Solving the model...")
+solver = pyo.SolverFactory('ipopt')
+solver.options['max_iter'] = 10000 
+solver.options['tol'] = 1e-4 
+solver.options['acceptable_tol'] = 1e-3 
+
+results = solver.solve(my_model, tee=True)
+# Solve and print the output log
+try:
+    results = solver.solve(my_model, tee=True)
+    
+    # Check if the solver found an optimal solution
+    if (results.solver.status == pyo.SolverStatus.ok) and (results.solver.termination_condition == pyo.TerminationCondition.optimal):
+        print("\nOptimal Solution Found!")
+        print(f"Total Objective Value (Grid Cost + Degradation Penalty): {pyo.value(my_model.objective):.2f} EUR")
+        
+        print("\n--- Scheduled Variables per Time Step ---")
+        for t in my_model.T:
+            print(f"Hour {t}:")
+            print(f"  P_grid  = {pyo.value(my_model.P_grid[t]):.2f} kW")
+            print(f"  P_ch    = {pyo.value(my_model.P_ch[t]):.2f} kW")
+            print(f"  P_dis   = {pyo.value(my_model.P_dis[t]):.2f} kW")
+            print(f"  SoC     = {pyo.value(my_model.SoC[t])*100:.1f} %")
+    else:
+        print("\nSolver did not converge to an optimal solution.")
+except Exception as e:
+    print(f"\nAn error occurred during solving: {e}")
+    print("Ensure you have a non-linear solver like 'ipopt' installed (e.g., via 'conda install -c conda-forge ipopt').")
+import matplotlib.pyplot as plt
+
+if (results.solver.status == pyo.SolverStatus.ok) and (results.solver.termination_condition == pyo.TerminationCondition.optimal):
+    
+    p_grid_vals    = [pyo.value(my_model.P_grid[t]) for t in times]
+    p_ch_vals      = [pyo.value(my_model.P_ch[t]) for t in times]
+    p_dis_vals     = [pyo.value(my_model.P_dis[t]) for t in times]
+    p_curtail_vals = [pyo.value(my_model.P_curtail[t]) for t in times]
+    soc_vals       = [pyo.value(my_model.SoC[t]) * 100 for t in times] 
+    
+    # NEW: Extract the calculated financial costs
+    c_dod_vals = [pyo.value(my_model.C_DOD[t]) for t in times]
+    c_soc_vals = [pyo.value(my_model.C_SoC[t]) for t in times]
+    
+    pv_vals    = [PV_data[t] for t in times]
+    ev_vals    = [EV_data[t] for t in times]
+    price_vals = [lambda_data[t] for t in times]
+
+    fig, axs = plt.subplots(4, 1, figsize=(12, 14), sharex=True)
+
+    # --- Subplot 1: Power Flows ---
+    axs[0].plot(times, pv_vals, label='PV Generation', color='orange', linestyle='--')
+    axs[0].plot(times, ev_vals, label='EV Demand', color='blue', linestyle='--')
+    axs[0].plot(times, p_grid_vals, label='Grid Import', color='red')
+    axs[0].plot(times, p_ch_vals, label='Battery Charge', color='green')
+    axs[0].plot(times, p_dis_vals, label='Battery Discharge', color='purple')
+    axs[0].plot(times, p_curtail_vals, label='PV Curtailed', color='grey', linestyle=':')
+    
+    axs[0].set_ylabel('Power (kW)')
+    axs[0].set_title('System Power Flows')
+    axs[0].grid(True, linestyle=':', alpha=0.7)
+    axs[0].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
+
+    # --- Subplot 2: Battery State of Charge (SoC) ---
+    axs[1].plot(times, soc_vals, label='SoC (%)', color='teal', linewidth=2)
+    axs[1].axhline(y=params_dict['SoC_min']*100, color='r', linestyle=':', label='Min SoC')
+    axs[1].axhline(y=params_dict['SoC_max']*100, color='r', linestyle=':', label='Max SoC')
+    
+    axs[1].set_ylabel('SoC (%)')
+    axs[1].set_title('Battery State of Charge')
+    axs[1].set_ylim(0, 105)
+    axs[1].grid(True, linestyle=':', alpha=0.7)
+    axs[1].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
+
+    # --- Subplot 3: Financial Degradation Penalties ---
+    axs[2].plot(times, c_dod_vals, label='Cycle Cost (C_DoD)', color='crimson', linewidth=2)
+    axs[2].plot(times, c_soc_vals, label='Calendar Cost (C_SoC)', color='darkorange', linewidth=2)
+    
+    axs[2].set_ylabel('Cost Penalty (EUR)')
+    axs[2].set_title('Financial Degradation Costs per Time Step')
+    axs[2].grid(True, linestyle=':', alpha=0.7)
+    axs[2].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
+
+    # --- Subplot 4: Electricity Price ---
+    axs[3].plot(times, price_vals, label='Grid Buying Price', color='darkred', drawstyle='steps-mid')
+    
+    axs[3].set_xlabel('Time of Day')
+    axs[3].set_ylabel('Price (EUR/kWh)')
+    axs[3].set_title('Electricity Price')
+    axs[3].grid(True, linestyle=':', alpha=0.7)
+    axs[3].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
+
+    # Format the X-axis to show labels every 4 hours (16 time steps)
+    axs[3].set_xticks(times[::16])
+    
+    def format_time_label(t):
+        day = ((t - 1) // 96) + 1
+        hour = int(((t - 1) % 96) * 0.25)
+        return f"D{day} {hour:02d}:00"
+        
+    axs[3].set_xticklabels([format_time_label(t) for t in times[::16]], rotation=45)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    plt.tight_layout()
+    plt.show()
+else:
+    print("Cannot plot results: Optimization did not converge to an optimal solution.")
