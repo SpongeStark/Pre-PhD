@@ -141,8 +141,8 @@ params_dict = {
     'eta_mppt': 0.98,
     'eta_pvinverter': 0.96,  # NEW: Added from Eq 4
 
-    'P_B_max': 30.0, 
-    'E_B_max': 30.0, 
+    'P_B_max': 40.0, 
+    'E_B_max': 50.0, 
     'E_B_0': 5.0, 
     
     'D_ch': 0.8, 
@@ -168,102 +168,23 @@ random.seed(42)
 T_horizon = 288
 times = range(1, T_horizon + 1)
 
-PV_data = {}
-EV_data = {}
-lambda_data = {}
+# ---------------------------------------------------------
+# FIXED: PV and EV Data Import
+# ---------------------------------------------------------
 pv = pd.read_csv("yhat_test_prod.csv")
 ev = pd.read_csv("yhat_test_conso.csv")
-PV_data = 
-EV_data = {}
-lambda_data = {}
 
-# for t in times:
-#     # Determine which day (1, 2, or 3) and what hour of that day (0.0 to 23.75)
-#     day = ((t - 1) // 96) + 1
-#     hour = ((t - 1) % 96) * 0.25 
-    
-#     # =========================================================
-#     # DAY 1: Sunny Weekday & Commuter EV
-#     # =========================================================
-#     if day == 1:
-#         # 1. PV: Perfect Bell Curve (Peak 40 kW)
-#         if 6 < hour < 20: 
-#             PV_data[t] = max(0.0, 40.0 * math.exp(-0.5 * ((hour - 13.0) / 2.5)**2))
-#         else:
-#             PV_data[t] = 0.0
+# Map 0-indexed Pandas data to 1-indexed Pyomo time steps
+PV_data = {t: pv['yhat'].iloc[t-1] for t in times}
+EV_data = {t: ev['yhat'].iloc[t-1] for t in times}
 
-#         # 2. EV: Commuter Profile
-#         if 19.0 <= hour < 22.0:
-#             EV_data[t] = 22.0  # Heavy evening charge
-#         elif 7.0 <= hour < 8.0:
-#             EV_data[t] = 11.0  # Morning pre-conditioning
-#         else:
-#             EV_data[t] = 0.0
+# ---------------------------------------------------------
+# FIXED: Constant Energy Price
+# ---------------------------------------------------------
+# Map every time step to the constant price of 0.06
+lambda_data = {t: 0.06 for t in times}
 
-#         # 3. Price: Standard TOU
-#         if 16.0 <= hour < 22.0:
-#             lambda_data[t] = 0.28 
-#         elif 6.0 <= hour < 16.0:
-#             lambda_data[t] = 0.18 
-#         else:
-#             lambda_data[t] = 0.12 
-
-#     # =========================================================
-#     # DAY 2: Cloudy WFH Day & Grid Stress
-#     # =========================================================
-#     # =========================================================
-#     # DAY 2: EV Consumption > PV Production During Daytime
-#     # =========================================================
-#     elif day == 2:
-#         # 1. PV: Moderate sunny day (Peak 12 kW at 13:00)
-#         if 6 < hour < 20: 
-#             PV_data[t] = max(0.0, 12.0 * math.exp(-0.5 * ((hour - 13.0) / 3.0)**2))
-#         else:
-#             PV_data[t] = 0.0
-
-#         # 2. EV: Heavy daytime charging from 10:00 to 16:00
-#         # At 16 kW, the EV demand is always higher than the maximum 12 kW PV generation.
-#         if 10.0 <= hour <= 16.0:
-#             EV_data[t] = 16.0 
-#         elif 19.0 <= hour <= 20.0:
-#             EV_data[t] = 5.0 # Minor evening demand just to keep things dynamic
-#         else:
-#             EV_data[t] = 0.0
-
-#         # 3. Price: Standard Time-of-Use pricing
-#         if 16.0 <= hour < 22.0:
-#             lambda_data[t] = 0.28  # On-peak (Evening)
-#         elif 6.0 <= hour < 16.0:
-#             lambda_data[t] = 0.18  # Mid-peak (Daytime)
-#         else:
-#             lambda_data[t] = 0.12  # Off-peak (Night)
-
-#     # =========================================================
-#     # DAY 3: Weekend (Afternoon Sun & Errands)
-#     # =========================================================
-#     elif day == 3:
-#         # 1. PV: Shifted Afternoon Sun (Peak 30 kW at 15:00)
-#         if 7 < hour < 20: 
-#             PV_data[t] = max(0.0, 30.0 * math.exp(-0.5 * ((hour - 15.0) / 2.0)**2))
-#         else:
-#             PV_data[t] = 0.0
-
-#         # 2. EV: Errands (Away mid-day, heavy charge at night)
-#         if (8.0 <= hour <= 9.0) or (15.0 <= hour <= 17.0):
-#             if random.random() < 0.50:
-#                 EV_data[t] = round(random.uniform(5.0, 15.0), 2)
-#             else:
-#                 EV_data[t] = 0.0
-#         elif 20.0 <= hour <= 23.0:
-#             EV_data[t] = 15.0 # Prepping for Monday
-#         else:
-#             EV_data[t] = 0.0
-
-#         # 3. Price: Weekend Flat Rate
-#         if 17.0 <= hour < 21.0:
-#             lambda_data[t] = 0.20 # Mild evening peak
-#         else:
-#             lambda_data[t] = 0.15 # Flat rate rest of the day
+# (You can delete or keep your commented-out daily generation code here)
 
 print("Building the optimization model...")
 my_model = build_optimization_model(T_horizon, params_dict, PV_data, EV_data, lambda_data)
@@ -313,65 +234,94 @@ if (results.solver.status == pyo.SolverStatus.ok) and (results.solver.terminatio
     pv_vals    = [PV_data[t] for t in times]
     ev_vals    = [EV_data[t] for t in times]
     price_vals = [lambda_data[t] for t in times]
+    fig, ax = plt.subplots(figsize=(12, 6))
 
-    fig, axs = plt.subplots(4, 1, figsize=(12, 14), sharex=True)
-
-    # --- Subplot 1: Power Flows ---
-    axs[0].plot(times, pv_vals, label='PV Generation', color='orange', linestyle='--')
-    axs[0].plot(times, ev_vals, label='EV Demand', color='blue', linestyle='--')
-    axs[0].plot(times, p_grid_vals, label='Grid Import', color='red')
-    axs[0].plot(times, p_ch_vals, label='Battery Charge', color='green')
-    axs[0].plot(times, p_dis_vals, label='Battery Discharge', color='purple')
-    axs[0].plot(times, p_curtail_vals, label='PV Curtailed', color='grey', linestyle=':')
+    # --- Plot 1: Power Flows ---
+    ax.plot(times, pv_vals, label='PV Generation', color='orange', linestyle='--')
+    ax.plot(times, ev_vals, label='EV Demand', color='blue', linestyle='--')
+    ax.plot(times, p_grid_vals, label='Grid Import', color='red')
+    ax.plot(times, p_ch_vals, label='Battery Charge', color='green')
+    ax.plot(times, p_dis_vals, label='Battery Discharge', color='purple')
+    ax.plot(times, p_curtail_vals, label='PV Curtailed', color='grey', linestyle=':')
     
-    axs[0].set_ylabel('Power (kW)')
-    axs[0].set_title('System Power Flows')
-    axs[0].grid(True, linestyle=':', alpha=0.7)
-    axs[0].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
-
-    # --- Subplot 2: Battery State of Charge (SoC) ---
-    axs[1].plot(times, soc_vals, label='SoC (%)', color='teal', linewidth=2)
-    axs[1].axhline(y=params_dict['SoC_min']*100, color='r', linestyle=':', label='Min SoC')
-    axs[1].axhline(y=params_dict['SoC_max']*100, color='r', linestyle=':', label='Max SoC')
-    
-    axs[1].set_ylabel('SoC (%)')
-    axs[1].set_title('Battery State of Charge')
-    axs[1].set_ylim(0, 105)
-    axs[1].grid(True, linestyle=':', alpha=0.7)
-    axs[1].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
-
-    # --- Subplot 3: Financial Degradation Penalties ---
-    axs[2].plot(times, c_dod_vals, label='Cycle Cost (C_DoD)', color='crimson', linewidth=2)
-    axs[2].plot(times, c_soc_vals, label='Calendar Cost (C_SoC)', color='darkorange', linewidth=2)
-    
-    axs[2].set_ylabel('Cost Penalty (EUR)')
-    axs[2].set_title('Financial Degradation Costs per Time Step')
-    axs[2].grid(True, linestyle=':', alpha=0.7)
-    axs[2].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
-
-    # --- Subplot 4: Electricity Price ---
-    axs[3].plot(times, price_vals, label='Grid Buying Price', color='darkred', drawstyle='steps-mid')
-    
-    axs[3].set_xlabel('Time of Day')
-    axs[3].set_ylabel('Price (EUR/kWh)')
-    axs[3].set_title('Electricity Price')
-    axs[3].grid(True, linestyle=':', alpha=0.7)
-    axs[3].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
+    ax.set_xlabel('Time of Day') # Added this from the bottom plot
+    ax.set_ylabel('Power (kW)')
+    ax.set_title('System Power Flows')
+    ax.grid(True, linestyle=':', alpha=0.7)
+    ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
 
     # Format the X-axis to show labels every 4 hours (16 time steps)
-    axs[3].set_xticks(times[::16])
+    ax.set_xticks(times[::16])
     
     def format_time_label(t):
         day = ((t - 1) // 96) + 1
         hour = int(((t - 1) % 96) * 0.25)
         return f"D{day} {hour:02d}:00"
         
-    axs[3].set_xticklabels([format_time_label(t) for t in times[::16]], rotation=45)
+    ax.set_xticklabels([format_time_label(t) for t in times[::16]], rotation=45)
     
     plt.tight_layout()
     plt.show()
+
+    # fig, axs = plt.subplots(1, 1, figsize=(12, 14), sharex=True)
+
+
+    # # --- Subplot 1: Power Flows ---
+    # axs[0].plot(times, pv_vals, label='PV Generation', color='orange', linestyle='--')
+    # axs[0].plot(times, ev_vals, label='EV Demand', color='blue', linestyle='--')
+    # axs[0].plot(times, p_grid_vals, label='Grid Import', color='red')
+    # axs[0].plot(times, p_ch_vals, label='Battery Charge', color='green')
+    # axs[0].plot(times, p_dis_vals, label='Battery Discharge', color='purple')
+    # axs[0].plot(times, p_curtail_vals, label='PV Curtailed', color='grey', linestyle=':')
     
-    plt.tight_layout()
-    plt.show()
+    # axs[0].set_ylabel('Power (kW)')
+    # axs[0].set_title('System Power Flows')
+    # axs[0].grid(True, linestyle=':', alpha=0.7)
+    # axs[0].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
+
+    # # # --- Subplot 2: Battery State of Charge (SoC) ---
+    # # axs[1].plot(times, soc_vals, label='SoC (%)', color='teal', linewidth=2)
+    # # axs[1].axhline(y=params_dict['SoC_min']*100, color='r', linestyle=':', label='Min SoC')
+    # # axs[1].axhline(y=params_dict['SoC_max']*100, color='r', linestyle=':', label='Max SoC')
+    
+    # # axs[1].set_ylabel('SoC (%)')
+    # # axs[1].set_title('Battery State of Charge')
+    # # axs[1].set_ylim(0, 105)
+    # # axs[1].grid(True, linestyle=':', alpha=0.7)
+    # # axs[1].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
+
+    # # # --- Subplot 3: Financial Degradation Penalties ---
+    # # axs[2].plot(times, c_dod_vals, label='Cycle Cost (C_DoD)', color='crimson', linewidth=2)
+    # # axs[2].plot(times, c_soc_vals, label='Calendar Cost (C_SoC)', color='darkorange', linewidth=2)
+    
+    # # axs[2].set_ylabel('Cost Penalty (EUR)')
+    # # axs[2].set_title('Financial Degradation Costs per Time Step')
+    # # axs[2].grid(True, linestyle=':', alpha=0.7)
+    # # axs[2].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
+
+    # # --- Subplot 4: Electricity Price ---
+    # # axs[3].plot(times, price_vals, label='Grid Buying Price', color='darkred', drawstyle='steps-mid')
+    
+    # # axs[3].set_xlabel('Time of Day')
+    # # axs[3].set_ylabel('Price (EUR/kWh)')
+    # # axs[3].set_title('Electricity Price')
+    # # axs[3].grid(True, linestyle=':', alpha=0.7)
+    # # axs[3].legend(loc='center left', bbox_to_anchor=(1.02, 0.5))
+
+    # # Format the X-axis to show labels every 4 hours (16 time steps)
+    # axs[2].set_xticks(times[::16])
+    
+    # def format_time_label(t):
+    #     day = ((t - 1) // 96) + 1
+    #     hour = int(((t - 1) % 96) * 0.25)
+    #     return f"D{day} {hour:02d}:00"
+        
+    # axs[2].set_xticklabels([format_time_label(t) for t in times[::16]], rotation=45)
+    
+    # plt.tight_layout()
+    # plt.show()
+    
+    # plt.tight_layout()
+    # plt.show()
 else:
     print("Cannot plot results: Optimization did not converge to an optimal solution.")
