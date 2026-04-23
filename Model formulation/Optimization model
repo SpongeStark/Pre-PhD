@@ -171,99 +171,99 @@ times = range(1, T_horizon + 1)
 PV_data = {}
 EV_data = {}
 lambda_data = {}
-pv = pd.read_csv("yhat_test_prod.csv")
-ev = pd.read_csv("yhat_test_conso.csv")
-PV_data = 
-EV_data = {}
-lambda_data = {}
+# pv = pd.read_csv("yhat_test_prod.csv")
+# ev = pd.read_csv("yhat_test_conso.csv")
+# PV_data = 
+# EV_data = {}
+# lambda_data = {}
 
-# for t in times:
-#     # Determine which day (1, 2, or 3) and what hour of that day (0.0 to 23.75)
-#     day = ((t - 1) // 96) + 1
-#     hour = ((t - 1) % 96) * 0.25 
+for t in times:
+    # Determine which day (1, 2, or 3) and what hour of that day (0.0 to 23.75)
+    day = ((t - 1) // 96) + 1
+    hour = ((t - 1) % 96) * 0.25 
     
-#     # =========================================================
-#     # DAY 1: Sunny Weekday & Commuter EV
-#     # =========================================================
-#     if day == 1:
-#         # 1. PV: Perfect Bell Curve (Peak 40 kW)
-#         if 6 < hour < 20: 
-#             PV_data[t] = max(0.0, 40.0 * math.exp(-0.5 * ((hour - 13.0) / 2.5)**2))
-#         else:
-#             PV_data[t] = 0.0
+    # =========================================================
+    # DAY 1: Sunny Weekday & Commuter EV
+    # =========================================================
+    if day == 1:
+        # 1. PV: Perfect Bell Curve (Peak 40 kW)
+        if 6 < hour < 20: 
+            PV_data[t] = max(0.0, 40.0 * math.exp(-0.5 * ((hour - 13.0) / 2.5)**2))
+        else:
+            PV_data[t] = 0.0
 
-#         # 2. EV: Commuter Profile
-#         if 19.0 <= hour < 22.0:
-#             EV_data[t] = 22.0  # Heavy evening charge
-#         elif 7.0 <= hour < 8.0:
-#             EV_data[t] = 11.0  # Morning pre-conditioning
-#         else:
-#             EV_data[t] = 0.0
+        # 2. EV: Commuter Profile
+        if 19.0 <= hour < 22.0:
+            EV_data[t] = 22.0  # Heavy evening charge
+        elif 7.0 <= hour < 8.0:
+            EV_data[t] = 11.0  # Morning pre-conditioning
+        else:
+            EV_data[t] = 0.0
 
-#         # 3. Price: Standard TOU
-#         if 16.0 <= hour < 22.0:
-#             lambda_data[t] = 0.28 
-#         elif 6.0 <= hour < 16.0:
-#             lambda_data[t] = 0.18 
-#         else:
-#             lambda_data[t] = 0.12 
+        # 3. Price: Standard TOU
+        if 16.0 <= hour < 22.0:
+            lambda_data[t] = 0.28 
+        elif 6.0 <= hour < 16.0:
+            lambda_data[t] = 0.18 
+        else:
+            lambda_data[t] = 0.12 
 
-#     # =========================================================
-#     # DAY 2: Cloudy WFH Day & Grid Stress
-#     # =========================================================
-#     # =========================================================
-#     # DAY 2: EV Consumption > PV Production During Daytime
-#     # =========================================================
-#     elif day == 2:
-#         # 1. PV: Moderate sunny day (Peak 12 kW at 13:00)
-#         if 6 < hour < 20: 
-#             PV_data[t] = max(0.0, 12.0 * math.exp(-0.5 * ((hour - 13.0) / 3.0)**2))
-#         else:
-#             PV_data[t] = 0.0
+    # =========================================================
+    # DAY 2: Cloudy WFH Day & Grid Stress
+    # =========================================================
+    # =========================================================
+    # DAY 2: EV Consumption > PV Production During Daytime
+    # =========================================================
+    elif day == 2:
+        # 1. PV: Moderate sunny day (Peak 12 kW at 13:00)
+        if 6 < hour < 20: 
+            PV_data[t] = max(0.0, 12.0 * math.exp(-0.5 * ((hour - 13.0) / 3.0)**2))
+        else:
+            PV_data[t] = 0.0
 
-#         # 2. EV: Heavy daytime charging from 10:00 to 16:00
-#         # At 16 kW, the EV demand is always higher than the maximum 12 kW PV generation.
-#         if 10.0 <= hour <= 16.0:
-#             EV_data[t] = 16.0 
-#         elif 19.0 <= hour <= 20.0:
-#             EV_data[t] = 5.0 # Minor evening demand just to keep things dynamic
-#         else:
-#             EV_data[t] = 0.0
+        # 2. EV: Heavy daytime charging from 10:00 to 16:00
+        # At 16 kW, the EV demand is always higher than the maximum 12 kW PV generation.
+        if 10.0 <= hour <= 16.0:
+            EV_data[t] = 16.0 
+        elif 19.0 <= hour <= 20.0:
+            EV_data[t] = 5.0 # Minor evening demand just to keep things dynamic
+        else:
+            EV_data[t] = 0.0
 
-#         # 3. Price: Standard Time-of-Use pricing
-#         if 16.0 <= hour < 22.0:
-#             lambda_data[t] = 0.28  # On-peak (Evening)
-#         elif 6.0 <= hour < 16.0:
-#             lambda_data[t] = 0.18  # Mid-peak (Daytime)
-#         else:
-#             lambda_data[t] = 0.12  # Off-peak (Night)
+        # 3. Price: Standard Time-of-Use pricing
+        if 16.0 <= hour < 22.0:
+            lambda_data[t] = 0.28  # On-peak (Evening)
+        elif 6.0 <= hour < 16.0:
+            lambda_data[t] = 0.18  # Mid-peak (Daytime)
+        else:
+            lambda_data[t] = 0.12  # Off-peak (Night)
 
-#     # =========================================================
-#     # DAY 3: Weekend (Afternoon Sun & Errands)
-#     # =========================================================
-#     elif day == 3:
-#         # 1. PV: Shifted Afternoon Sun (Peak 30 kW at 15:00)
-#         if 7 < hour < 20: 
-#             PV_data[t] = max(0.0, 30.0 * math.exp(-0.5 * ((hour - 15.0) / 2.0)**2))
-#         else:
-#             PV_data[t] = 0.0
+    # =========================================================
+    # DAY 3: Weekend (Afternoon Sun & Errands)
+    # =========================================================
+    elif day == 3:
+        # 1. PV: Shifted Afternoon Sun (Peak 30 kW at 15:00)
+        if 7 < hour < 20: 
+            PV_data[t] = max(0.0, 30.0 * math.exp(-0.5 * ((hour - 15.0) / 2.0)**2))
+        else:
+            PV_data[t] = 0.0
 
-#         # 2. EV: Errands (Away mid-day, heavy charge at night)
-#         if (8.0 <= hour <= 9.0) or (15.0 <= hour <= 17.0):
-#             if random.random() < 0.50:
-#                 EV_data[t] = round(random.uniform(5.0, 15.0), 2)
-#             else:
-#                 EV_data[t] = 0.0
-#         elif 20.0 <= hour <= 23.0:
-#             EV_data[t] = 15.0 # Prepping for Monday
-#         else:
-#             EV_data[t] = 0.0
+        # 2. EV: Errands (Away mid-day, heavy charge at night)
+        if (8.0 <= hour <= 9.0) or (15.0 <= hour <= 17.0):
+            if random.random() < 0.50:
+                EV_data[t] = round(random.uniform(5.0, 15.0), 2)
+            else:
+                EV_data[t] = 0.0
+        elif 20.0 <= hour <= 23.0:
+            EV_data[t] = 15.0 # Prepping for Monday
+        else:
+            EV_data[t] = 0.0
 
-#         # 3. Price: Weekend Flat Rate
-#         if 17.0 <= hour < 21.0:
-#             lambda_data[t] = 0.20 # Mild evening peak
-#         else:
-#             lambda_data[t] = 0.15 # Flat rate rest of the day
+        # 3. Price: Weekend Flat Rate
+        if 17.0 <= hour < 21.0:
+            lambda_data[t] = 0.20 # Mild evening peak
+        else:
+            lambda_data[t] = 0.15 # Flat rate rest of the day
 
 print("Building the optimization model...")
 my_model = build_optimization_model(T_horizon, params_dict, PV_data, EV_data, lambda_data)
