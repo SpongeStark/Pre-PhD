@@ -1,0 +1,13 @@
+paths:
+  processed_data: "data/processed/master_dataset.parquet"
+  model_output: "models/lgbm_pv_model.pkl"
+
+forecasting:
+  target_col: "PV"
+  lookback_days: 30
+  horizon_steps: 96
+  
+  # The Forecaster will read these dates to slice the master dataset
+  split_dates:
+    val_start: "2024-01-01 00:00:00"
+    test_start: "2024-10-01 00:00:00"
