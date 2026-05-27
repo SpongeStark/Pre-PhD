@@ -22,7 +22,7 @@ def load_and_split_data(config: dict) -> tuple:
     # 1. Load the single, clean dataset produced by data_cleaner.py
     # Resolve the project root relative to this file (src/forecaster.py -> BMS_brain)
     root_proj = Path(__file__).parent.parent
-    data_path = root_proj / config['paths']['processed_data']
+    data_path = root_proj / "data/master_dataset_con.parquet"
         
     df = pd.read_parquet(data_path)
     
@@ -94,7 +94,7 @@ def run(config: dict):
 
     # Define your exogenous columns
     exog_cols = [
-        'temp', 'GHI', # Weather
+        'temp', # Weather
         'hour_sin', 'hour_cos', 
         'doy_sin', 'doy_cos', 
         'dow_sin', 'dow_cos'
@@ -102,14 +102,14 @@ def run(config: dict):
 
     print("\nTraining forecaster on training set...")
     forecaster.fit(
-        y    = df_train['PV'], 
+        y    = df_train['c_gen'], 
         exog = df_train[exog_cols]
     )
     
     # --- Save the trained model ---
     import joblib
     root_proj = Path(__file__).parent.parent
-    model_out_path = root_proj / config['paths']['model_output']
+    model_out_path = root_proj / "models/xgb_con_model.pkl"
     model_out_path.parent.mkdir(parents=True, exist_ok=True)
     
     joblib.dump(forecaster, model_out_path)
@@ -119,8 +119,8 @@ def run(config: dict):
     print("\nPredicting for the first 24 hours (96 steps) of the Test Set...")
     
     # We will forecast the first 96 steps of df_test. 
-    # We need the most recent historical PV data (from df_val) to feed into the lags.
-    last_window_data = df_val['PV'].iloc[-max(target_lags):]
+    # We need the most recent historical consumption data (from df_val) to feed into the lags.
+    last_window_data = df_val['c_gen'].iloc[-max(target_lags):]
     
     # The exogenous data for the next 96 steps
     df_test_first_day = df_test.iloc[:96]
@@ -134,7 +134,7 @@ def run(config: dict):
     )
     
     # Calculate error metrics
-    actuals = df_test_first_day['PV'].values
+    actuals = df_test_first_day['c_gen'].values
     preds = predictions.values
     
     mae = mean_absolute_error(actuals, preds)
@@ -148,11 +148,11 @@ def run(config: dict):
     
     # Plot comparison using the index (which is now our Date)
     plt.figure(figsize=(14, 6))
-    plt.plot(df_test_first_day.index, actuals, label='Actual PV Generation', linewidth=2, color='blue')
-    plt.plot(df_test_first_day.index, preds, label='Predicted PV Generation', linestyle='--', linewidth=2, color='orange')
+    plt.plot(df_test_first_day.index, actuals, label='Actual Consumption', linewidth=2, color='blue')
+    plt.plot(df_test_first_day.index, preds, label='Predicted Consumption', linestyle='--', linewidth=2, color='orange')
     plt.title('Forecaster Evaluation: Actual vs. Predicted (First 24 hours of Test Set)')
     plt.xlabel('Date')
-    plt.ylabel('PV Generation (kW)')
+    plt.ylabel('Consumption (kW)')
     plt.legend()
     plt.grid(True)
     plt.show()

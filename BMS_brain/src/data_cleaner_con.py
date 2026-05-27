@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 # Define the root path of the project
-root_proj = Path("/Users/alesk/Documents/Git-repo/Pre-PhD/BMS_brain")
+root_proj = Path(__file__).parent.parent
 
 # Add the 'src' directory to the system path
 if str(root_proj/"src") not in sys.path:
