@@ -31,6 +31,11 @@ for year_str, df_act in sheets.items():
     # Extract the target consumption column
     df_act['c_gen'] = df_act["0_ELEC : Total Fournisseur mesuré (06)"]  
     
+    # --- FIX CORRUPTED EXCEL DATES ---
+    # The '2022' sheet accidentally contains '2023' written in its Date column.
+    if year == 2022:
+        df_act["Date"] = df_act["Date"].astype(str).str.replace("2023-", "2022-")
+    
     # Convert 'Date' to datetime and subtract 1 hour
     df_act["Date_utc"] = pd.to_datetime(
         df_act["Date"],
@@ -79,6 +84,13 @@ for year_str, df_act in sheets.items():
     cols_to_keep = ['Date', 'offset', 'c_gen', 'temp', 'hour_sin', 'hour_cos', 'doy_sin', 'doy_cos', 'dow_sin', 'dow_cos']
     available_cols = [c for c in cols_to_keep if c in df_act.columns]
     df_act = df_act[available_cols]
+
+    # Handle anomalous consumption spikes (outliers)
+    # The max normal consumption is ~80-100kW, so a spike over 150kW is a known sensor artifact
+    outlier_mask = df_act['c_gen'] > 150
+    if outlier_mask.any():
+        df_act.loc[outlier_mask, 'c_gen'] = np.nan
+        df_act['c_gen'] = df_act['c_gen'].interpolate(method='linear')
 
     all_dts.append(df_act)
 
