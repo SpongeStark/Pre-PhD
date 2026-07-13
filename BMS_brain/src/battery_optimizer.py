@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+from rte_wholesale_market import RTEWholesaleMarketClient
 
 # ==========================================
 # 1. PARAMETERS & REAL DATA LOADING
@@ -35,9 +36,28 @@ time_steps = range(T)
 pv_profile = df['PV'].fillna(0).values
 load_profile = df['c_gen'].fillna(0).values
 
-# Electricity Tariff (Time-of-Use)
-hours = df['Date'].dt.hour
-tariff_profile = np.where((hours >= 16) & (hours <= 21), 0.25, 0.15)
+# Electricity Tariff (Time-of-Use / Real-Time RTE API)
+print("\nFetching real-time energy prices from RTE API...")
+try:
+    client = RTEWholesaleMarketClient()
+    rt_profile = client.get_representative_24h_profile()
+    
+    if rt_profile:
+        print("Successfully retrieved 24-hour real-time price profile from RTE API.")
+        # Map to the dataset based on hour and minute of the day
+        tariff_profile = df['Date'].apply(lambda x: rt_profile.get((x.hour, x.minute), 0.15)).values
+        
+        # Log pricing statistics
+        print(f"RTE Tariff stats - Min: {tariff_profile.min():.4f} €/kWh, Max: {tariff_profile.max():.4f} €/kWh, Mean: {tariff_profile.mean():.4f} €/kWh")
+    else:
+        print("RTE API returned empty profile. Falling back to synthetic Time-of-Use tariff.")
+        hours = df['Date'].dt.hour
+        tariff_profile = np.where((hours >= 16) & (hours <= 21), 0.25, 0.15)
+except Exception as e:
+    print(f"Failed to fetch from RTE API ({e}). Falling back to synthetic Time-of-Use tariff.")
+    hours = df['Date'].dt.hour
+    tariff_profile = np.where((hours >= 16) & (hours <= 21), 0.25, 0.15)
+
 
 # Economic Parameters (Sourced from the provided IEEE paper)
 life_years = 15
@@ -195,7 +215,9 @@ if pulp.LpStatus[model.status] == 'Optimal':
     
     plt.tight_layout()
     # Save the plot to a file in case the environment cannot display it
-    plt.savefig('optimization_results.png')
-    plt.show()
+    output_plot_path = Path(__file__).parent / "optimization_results.png"
+    plt.savefig(output_plot_path)
+    print(f"Optimization plots successfully saved to: {output_plot_path}")
+    plt.close()
 else:
     print("Solver could not find an optimal solution. Check constraints.")

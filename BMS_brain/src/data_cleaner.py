@@ -141,7 +141,10 @@ if all_dts:
     plt.ylabel('PV')
     plt.legend()
     plt.grid(True)
-    plt.show()
+    output_plot_path = Path(__file__).parent / "data_cleaner_results.png"
+    plt.savefig(output_plot_path)
+    print(f"Data Cleaner plots successfully saved to: {output_plot_path}")
+    plt.close()
     
     output_path = root_proj / "data/master_dataset.parquet"
     output_path.parent.mkdir(parents=True, exist_ok=True)

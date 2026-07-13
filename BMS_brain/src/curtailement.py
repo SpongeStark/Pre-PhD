@@ -131,6 +131,9 @@ try:
     plt.xlabel('Date (UTC)')
     plt.title(f'Train-Test Split for PV Generation Data ({year})')
     plt.legend()
-    plt.show()
+    output_plot_path = Path(__file__).parent / f"curtailment_results_{year}.png"
+    plt.savefig(output_plot_path)
+    print(f"Curtailment plots successfully saved to: {output_plot_path}")
+    plt.close()
 except IndexError:
     print("Warning: The exact October 1st split date was not found in the dataset. Skipping plot.")

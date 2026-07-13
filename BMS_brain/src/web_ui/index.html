@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS Brain - Battery Optimization Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="index.css">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- HEADER -->
+        <header class="app-header">
+            <div class="logo-area">
+                <span class="logo-icon">⚡</span>
+                <div class="logo-text">
+                    <h1>BMS BRAIN</h1>
+                    <span class="sub-logo">Battery Management & Sizing System</span>
+                </div>
+            </div>
+            <div class="connection-status">
+                <div class="status-indicator online" id="status-indicator"></div>
+                <span id="status-text">SYSTEM ONLINE</span>
+            </div>
+        </header>
+
+        <!-- PIPELINE FLOW VISUALIZATION -->
+        <section class="pipeline-viz">
+            <div class="section-title">
+                <h2>Data Flow Pipeline</h2>
+                <p>The sequential flow of data from raw inputs to sizing optimization</p>
+            </div>
+            <div class="pipeline-steps">
+                <div class="step-node" id="node-ghi_getter">
+                    <div class="node-icon">☀️</div>
+                    <div class="node-label">GHI Getter</div>
+                    <div class="node-sub">Weather Data Fetch</div>
+                </div>
+                <div class="flow-line" id="line-ghi-cleaner"></div>
+                
+                <div class="step-node" id="node-pv_cleaner">
+                    <div class="node-icon">🧹</div>
+                    <div class="node-label">PV Cleaner</div>
+                    <div class="node-sub">Clean Solar Gen</div>
+                </div>
+                <div class="flow-line" id="line-pv-con"></div>
+                
+                <div class="step-node" id="node-con_cleaner">
+                    <div class="node-icon">🔌</div>
+                    <div class="node-label">Consumption Cleaner</div>
+                    <div class="node-sub">Clean Load Profile</div>
+                </div>
+                <div class="flow-line" id="line-con-curtail"></div>
+                
+                <div class="step-node" id="node-curtailment">
+                    <div class="node-icon">✂️</div>
+                    <div class="node-label">Curtailment</div>
+                    <div class="node-sub">Solar PV Imputation</div>
+                </div>
+                <div class="flow-line" id="line-curtail-opt"></div>
+                
+                <div class="step-node" id="node-battery_optimizer">
+                    <div class="node-icon">🔋</div>
+                    <div class="node-label">Battery Optimizer</div>
+                    <div class="node-sub">LP Sizing & Scheduling</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TABS CONTROLLER -->
+        <div class="tab-controller">
+            <button class="tab-btn active" onclick="switchTab('individual')">Single Modules</button>
+            <button class="tab-btn" onclick="switchTab('pipeline')">Full Pipeline (Run All)</button>
+        </div>
+
+        <!-- MAIN LAYOUT -->
+        <main class="main-content">
+            
+            <!-- TAB 1: INDIVIDUAL MODULES -->
+            <section id="tab-individual" class="tab-panel active">
+                <div class="modules-grid">
+                    
+                    <!-- CARD 1: GHI GETTER -->
+                    <div class="module-card" id="card-ghi_getter">
+                        <div class="card-header">
+                            <span class="card-num">01</span>
+                            <h3>GHI Getter</h3>
+                            <span class="status-badge idle">Idle</span>
+                        </div>
+                        <p class="card-desc">Downloads 2023 Global Horizontal Irradiance (GHI) weather data from the Open-Meteo Historical Archive API for the Orly airport location.</p>
+                        <div class="card-actions">
+                            <button class="btn-primary" onclick="runScript('ghi_getter')">Run GHI Getter</button>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div class="console-log-header" onclick="toggleConsole('ghi_getter')">
+                            <span>Console Log Output</span>
+                            <span class="arrow">▼</span>
+                        </div>
+                        <div class="console-log" id="log-ghi_getter">
+                            <pre>Terminal output will appear here...</pre>
+                        </div>
+                    </div>
+
+                    <!-- CARD 2: PV CLEANER -->
+                    <div class="module-card" id="card-pv_cleaner">
+                        <div class="card-header">
+                            <span class="card-num">02</span>
+                            <h3>PV Cleaner</h3>
+                            <span class="status-badge idle">Idle</span>
+                        </div>
+                        <p class="card-desc">Cleans and aligns solar PV generation data for 2022-2024. Downloads climate inputs and imputes missing data using a Random Forest model.</p>
+                        <div class="card-actions">
+                            <button class="btn-primary" onclick="runScript('pv_cleaner')">Run PV Cleaner</button>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div class="console-log-header" onclick="toggleConsole('pv_cleaner')">
+                            <span>Console Log Output</span>
+                            <span class="arrow">▼</span>
+                        </div>
+                        <div class="console-log" id="log-pv_cleaner">
+                            <pre>Terminal output will appear here...</pre>
+                        </div>
+                        <div class="visualization-area" id="viz-pv_cleaner">
+                            <div class="viz-placeholder">Plot visualization will appear here upon successful run</div>
+                        </div>
+                    </div>
+
+                    <!-- CARD 3: CONSUMPTION CLEANER -->
+                    <div class="module-card" id="card-con_cleaner">
+                        <div class="card-header">
+                            <span class="card-num">03</span>
+                            <h3>Consumption Cleaner</h3>
+                            <span class="status-badge idle">Idle</span>
+                        </div>
+                        <p class="card-desc">Loads building consumption data, repairs Excel date corruption for the 2022 dataset, resolves daylight savings, filters outliers, and resamples to 15-minute intervals.</p>
+                        <div class="card-actions">
+                            <button class="btn-primary" onclick="runScript('con_cleaner')">Run Consumption Cleaner</button>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div class="console-log-header" onclick="toggleConsole('con_cleaner')">
+                            <span>Console Log Output</span>
+                            <span class="arrow">▼</span>
+                        </div>
+                        <div class="console-log" id="log-con_cleaner">
+                            <pre>Terminal output will appear here...</pre>
+                        </div>
+                        <div class="visualization-area" id="viz-con_cleaner">
+                            <div class="viz-placeholder">Plot visualization will appear here upon successful run</div>
+                        </div>
+                    </div>
+
+                    <!-- CARD 4: CURTAILMENT -->
+                    <div class="module-card" id="card-curtailment">
+                        <div class="card-header">
+                            <span class="card-num">04</span>
+                            <h3>Curtailment Analysis</h3>
+                            <span class="status-badge idle">Idle</span>
+                        </div>
+                        <p class="card-desc">Analyzes PV curtailment schedules, models historical curtailment periods, and creates train-test splits for validation models.</p>
+                        <div class="card-actions">
+                            <button class="btn-primary" onclick="runScript('curtailment')">Run Curtailment</button>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div class="console-log-header" onclick="toggleConsole('curtailment')">
+                            <span>Console Log Output</span>
+                            <span class="arrow">▼</span>
+                        </div>
+                        <div class="console-log" id="log-curtailment">
+                            <pre>Terminal output will appear here...</pre>
+                        </div>
+                        <div class="visualization-area" id="viz-curtailment">
+                            <div class="viz-placeholder">Plot visualization will appear here upon successful run</div>
+                        </div>
+                    </div>
+
+                    <!-- CARD 5: BATTERY OPTIMIZER -->
+                    <div class="module-card" id="card-battery_optimizer">
+                        <div class="card-header">
+                            <span class="card-num">05</span>
+                            <h3>Battery Optimizer</h3>
+                            <span class="status-badge idle">Idle</span>
+                        </div>
+                        <p class="card-desc">Solves the MILP sizing problem using PuLP. Integrates French Wholesale Market API price feeds, CSPE taxes, and network TURPE fees to solve optimal size and schedule.</p>
+                        <div class="card-actions">
+                            <button class="btn-primary" onclick="runScript('battery_optimizer')">Run Battery Optimizer</button>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div class="console-log-header" onclick="toggleConsole('battery_optimizer')">
+                            <span>Console Log Output</span>
+                            <span class="arrow">▼</span>
+                        </div>
+                        <div class="console-log" id="log-battery_optimizer">
+                            <pre>Terminal output will appear here...</pre>
+                        </div>
+                        <div class="visualization-area" id="viz-battery_optimizer">
+                            <div class="viz-placeholder">Plot visualization will appear here upon successful run</div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- TAB 2: FULL PIPELINE -->
+            <section id="tab-pipeline" class="tab-panel">
+                <div class="pipeline-run-box">
+                    <div class="run-header">
+                        <h2>Pipeline Execution Engine</h2>
+                        <button class="btn-large" id="btn-run-pipeline" onclick="runPipeline()">Run Sizing Pipeline</button>
+                    </div>
+                    
+                    <div class="pipeline-progress-section">
+                        <div class="progress-header">
+                            <span>Pipeline Status: <strong id="pipeline-status-text">Idle</strong></span>
+                            <span id="pipeline-percentage">0%</span>
+                        </div>
+                        <div class="pipeline-progress-bar">
+                            <div class="bar-fill" id="pipeline-fill"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="pipeline-results-layout">
+                        <!-- Sizing results output card -->
+                        <div class="results-summary-card" id="pipeline-results-summary">
+                            <h3>Sizing Optimization Results</h3>
+                            <div class="results-grid">
+                                <div class="result-metric">
+                                    <span class="metric-label">Optimal Battery Capacity</span>
+                                    <span class="metric-val" id="metric-capacity">-- kWh</span>
+                                </div>
+                                <div class="result-metric">
+                                    <span class="metric-label">Optimal Rated Power</span>
+                                    <span class="metric-val" id="metric-power">-- kW</span>
+                                </div>
+                                <div class="result-metric">
+                                    <span class="metric-label">Total Annualized Cost (CAPEX + OPEX)</span>
+                                    <span class="metric-val" id="metric-cost">-- €</span>
+                                </div>
+                            </div>
+                            <div class="results-desc">
+                                <p>Sourced from the dynamic real-time electricity tariff with the RTE market prices, including Accise sur l'électricité and TURPE network fees.</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Pipeline Log Terminal -->
+                        <div class="pipeline-terminal">
+                            <div class="terminal-header">
+                                <span>Pipeline Logs</span>
+                                <button class="btn-copy" onclick="copyLogs('pipeline')">Copy Logs</button>
+                            </div>
+                            <div class="console-log full-height" id="log-pipeline">
+                                <pre>Pipeline logs will appear here in real time...</pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pipeline Plots Gallery Carousel -->
+                    <div class="plots-gallery">
+                        <h3>Generated Visualizations</h3>
+                        <div class="gallery-tabs">
+                            <button class="gallery-tab active" onclick="switchGallery('pv')">PV Clean</button>
+                            <button class="gallery-tab" onclick="switchGallery('con')">Consumption Clean</button>
+                            <button class="gallery-tab" onclick="switchGallery('curtail')">Curtailment Analysis</button>
+                            <button class="gallery-tab" onclick="switchGallery('battery')">Sizing Solution</button>
+                        </div>
+                        <div class="gallery-content">
+                            <div class="gallery-img-container" id="gallery-pv">
+                                <img src="" alt="PV Cleaner Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Run the pipeline to build this chart.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="gallery-con">
+                                <img src="" alt="Consumption Cleaner Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Run the pipeline to build this chart.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="gallery-curtail">
+                                <img src="" alt="Curtailment Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Run the pipeline to build this chart.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="gallery-battery">
+                                <img src="" alt="Optimizer Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Run the pipeline to build this chart.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+        </main>
+        
+        <footer class="app-footer">
+            <p>Antigravity Powered Battery Management & Optimization System | French Electricity Market (RTE API) Integration</p>
+        </footer>
+    </div>
+    
+    <script src="index.js"></script>
+</body>
+</html>
