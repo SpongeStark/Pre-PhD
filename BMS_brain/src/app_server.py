@@ -15,10 +15,8 @@ UI_DIR = SRC_DIR / "web_ui"
 # Global state to keep track of running scripts
 # Statuses: "idle", "running", "success", "error"
 execution_state = {
-    "ghi_getter": {"status": "idle", "logs": "", "pid": None},
     "pv_cleaner": {"status": "idle", "logs": "", "pid": None},
     "con_cleaner": {"status": "idle", "logs": "", "pid": None},
-    "curtailment": {"status": "idle", "logs": "", "pid": None},
     "battery_optimizer": {"status": "idle", "logs": "", "pid": None},
     "pipeline": {"status": "idle", "logs": "", "current_step": None, "pid": None}
 }
@@ -27,10 +25,8 @@ state_lock = threading.Lock()
 
 # Mapping script identifiers to actual files
 SCRIPT_FILES = {
-    "ghi_getter": SRC_DIR / "ghi_getter.py",
     "pv_cleaner": SRC_DIR / "data_cleaner.py",
     "con_cleaner": SRC_DIR / "data_cleaner_con.py",
-    "curtailment": SRC_DIR / "curtailement.py",
     "battery_optimizer": SRC_DIR / "battery_optimizer.py"
 }
 
@@ -95,7 +91,7 @@ def run_script_thread(script_key, on_complete=None):
 
 def run_pipeline_thread():
     """Runs the complete data flow pipeline sequentially."""
-    steps = ["ghi_getter", "pv_cleaner", "con_cleaner", "curtailment", "battery_optimizer"]
+    steps = ["pv_cleaner", "con_cleaner", "battery_optimizer"]
     
     with state_lock:
         execution_state["pipeline"]["status"] = "running"
@@ -212,7 +208,6 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
             plot_files = {
                 "data_cleaner_results.png": SRC_DIR / "data_cleaner_results.png",
                 "data_cleaner_con_results.png": SRC_DIR / "data_cleaner_con_results.png",
-                "curtailment_results_2023.png": SRC_DIR / "curtailment_results_2023.png",
                 "optimization_results.png": SRC_DIR / "optimization_results.png"
             }
             
@@ -237,7 +232,14 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                 ui_file = UI_DIR / path.lstrip("/")
 
             # Verify it's within UI_DIR to prevent directory traversal
-            if ui_file.exists() and ui_file.is_relative_to(UI_DIR):
+            is_relative = False
+            try:
+                ui_file.resolve().relative_to(UI_DIR.resolve())
+                is_relative = True
+            except ValueError:
+                pass
+
+            if ui_file.exists() and is_relative:
                 content_types = {
                     ".html": "text/html",
                     ".css": "text/css",

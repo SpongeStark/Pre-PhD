@@ -83,7 +83,7 @@ async function updateSystemStatus() {
 
 // Update DOM cards based on script states
 function updateCards(state) {
-    const scripts = ["ghi_getter", "pv_cleaner", "con_cleaner", "curtailment", "battery_optimizer"];
+    const scripts = ["pv_cleaner", "con_cleaner", "battery_optimizer"];
     
     scripts.forEach(key => {
         const card = document.getElementById(`card-${key}`);
@@ -140,7 +140,7 @@ function updateCards(state) {
         startLogPolling("pipeline");
         
         // Calculate progress percentage based on current step
-        const stepsOrder = ["ghi_getter", "pv_cleaner", "con_cleaner", "curtailment", "battery_optimizer"];
+        const stepsOrder = ["pv_cleaner", "con_cleaner", "battery_optimizer"];
         const stepIdx = stepsOrder.indexOf(pState.current_step);
         const percent = stepIdx !== -1 ? Math.round((stepIdx / stepsOrder.length) * 100) : 10;
         pFill.style.width = `${percent}%`;
@@ -169,7 +169,7 @@ function updateCards(state) {
 
 // Update the glowing Pipeline Nodes at the top
 function updatePipelineNodes(state) {
-    const nodes = ["ghi_getter", "pv_cleaner", "con_cleaner", "curtailment", "battery_optimizer"];
+    const nodes = ["pv_cleaner", "con_cleaner", "battery_optimizer"];
     
     // Check if pipeline is running
     const pipelineRunning = state["pipeline"].status === "running";
@@ -185,7 +185,7 @@ function updatePipelineNodes(state) {
             if (pipelineCurrentStep === key) {
                 node.classList.add("active");
             } else {
-                const stepsOrder = ["ghi_getter", "pv_cleaner", "con_cleaner", "curtailment", "battery_optimizer"];
+                const stepsOrder = ["pv_cleaner", "con_cleaner", "battery_optimizer"];
                 if (stepsOrder.indexOf(key) < stepsOrder.indexOf(pipelineCurrentStep)) {
                     node.classList.add("success");
                 }
@@ -297,7 +297,6 @@ function getPlotFileName(scriptKey) {
     const mapping = {
         "pv_cleaner": "data_cleaner_results.png",
         "con_cleaner": "data_cleaner_con_results.png",
-        "curtailment": "curtailment_results_2023.png",
         "battery_optimizer": "optimization_results.png"
     };
     return mapping[scriptKey];
@@ -322,7 +321,6 @@ function displayAllGalleryPlots() {
     
     document.querySelector("#gallery-pv img").src = `${API_BASE}/api/plots/data_cleaner_results.png?t=${t}`;
     document.querySelector("#gallery-con img").src = `${API_BASE}/api/plots/data_cleaner_con_results.png?t=${t}`;
-    document.querySelector("#gallery-curtail img").src = `${API_BASE}/api/plots/curtailment_results_2023.png?t=${t}`;
     document.querySelector("#gallery-battery img").src = `${API_BASE}/api/plots/optimization_results.png?t=${t}`;
 }
 
@@ -384,10 +382,8 @@ function copyLogs(scriptKey) {
 
 function getNiceName(key) {
     const mapping = {
-        "ghi_getter": "GHI Getter",
         "pv_cleaner": "PV Cleaner",
         "con_cleaner": "Consumption Cleaner",
-        "curtailment": "Curtailment",
         "battery_optimizer": "Battery Optimizer"
     };
     return mapping[key] || key;

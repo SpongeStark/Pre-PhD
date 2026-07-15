@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
 # Define the root path of the project
-root_proj = Path("/Users/alesk/Documents/Git-repo/Pre-PhD/BMS_brain")
+root_proj = Path(__file__).parent.parent.resolve()
 
 # Add the 'src' directory to the system path
 if str(root_proj/"src") not in sys.path:

@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
 # Define the root path of the project
-root_proj = Path("/Users/alesk/Documents/Git-repo/Pre-PhD/BMS_brain")
+root_proj = Path(__file__).parent.parent.resolve()
 
 # Add the 'src' directory to the system path
 if str(root_proj/"src") not in sys.path:
@@ -82,36 +82,10 @@ dts['dow_cos'] = np.cos(2*np.pi*dts['dayofweek']/7)
 
 
 # ==============================================================================
-# --- 6. OVERCOME CURTAILMENT (Dynamic by Year) ---
+# --- 6. OVERCOME CURTAILMENT (Disabled/Removed) ---
 # ==============================================================================
-print(f"Reconstructing curtailed data for {year}...")
+print(f"Curtailment reconstruction is disabled for {year}.")
 dts['is_curtailed'] = False
-
-if year == 2022:
-    curtail_1 = (dts['Date'] >= '2022-04-01') & (dts['Date'] <= '2022-05-05')
-    curtail_2 = (dts['Date'] >= '2022-07-03') & (dts['Date'] <= '2022-09-07')
-    dts.loc[curtail_1 | curtail_2, 'is_curtailed'] = True
-elif year == 2023:
-    curtail_1 = (dts['Date'] >= '2023-06-22') & (dts['Date'] <= '2023-09-29')
-    dts.loc[curtail_1, 'is_curtailed'] = True
-
-# Define features used to train the Random Forest
-ml_features = ['GHI', 'temp']
-
-if dts['is_curtailed'].sum() > 0:
-    # Split into clean data (to train) and curtailed data (to fix)
-    clean_data = dts[~dts['is_curtailed']].dropna(subset=ml_features + ['PV'])
-    curtailed_data = dts[dts['is_curtailed']].copy()
-    
-    # Train model
-    model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
-    model.fit(clean_data[ml_features], clean_data['PV'])
-    
-    # Predict and overwrite the bad PV values
-    dts.loc[dts['is_curtailed'], 'PV'] = model.predict(curtailed_data[ml_features])
-    print(f"Curtailment successfully repaired for {year}.")
-else:
-    print(f"No curtailment periods defined or found for {year}.")
 # ==============================================================================
 
 

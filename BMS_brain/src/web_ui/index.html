@@ -33,13 +33,6 @@
                 <p>The sequential flow of data from raw inputs to sizing optimization</p>
             </div>
             <div class="pipeline-steps">
-                <div class="step-node" id="node-ghi_getter">
-                    <div class="node-icon">☀️</div>
-                    <div class="node-label">GHI Getter</div>
-                    <div class="node-sub">Weather Data Fetch</div>
-                </div>
-                <div class="flow-line" id="line-ghi-cleaner"></div>
-                
                 <div class="step-node" id="node-pv_cleaner">
                     <div class="node-icon">🧹</div>
                     <div class="node-label">PV Cleaner</div>
@@ -52,14 +45,7 @@
                     <div class="node-label">Consumption Cleaner</div>
                     <div class="node-sub">Clean Load Profile</div>
                 </div>
-                <div class="flow-line" id="line-con-curtail"></div>
-                
-                <div class="step-node" id="node-curtailment">
-                    <div class="node-icon">✂️</div>
-                    <div class="node-label">Curtailment</div>
-                    <div class="node-sub">Solar PV Imputation</div>
-                </div>
-                <div class="flow-line" id="line-curtail-opt"></div>
+                <div class="flow-line" id="line-con-opt"></div>
                 
                 <div class="step-node" id="node-battery_optimizer">
                     <div class="node-icon">🔋</div>
@@ -82,33 +68,10 @@
             <section id="tab-individual" class="tab-panel active">
                 <div class="modules-grid">
                     
-                    <!-- CARD 1: GHI GETTER -->
-                    <div class="module-card" id="card-ghi_getter">
-                        <div class="card-header">
-                            <span class="card-num">01</span>
-                            <h3>GHI Getter</h3>
-                            <span class="status-badge idle">Idle</span>
-                        </div>
-                        <p class="card-desc">Downloads 2023 Global Horizontal Irradiance (GHI) weather data from the Open-Meteo Historical Archive API for the Orly airport location.</p>
-                        <div class="card-actions">
-                            <button class="btn-primary" onclick="runScript('ghi_getter')">Run GHI Getter</button>
-                        </div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div class="console-log-header" onclick="toggleConsole('ghi_getter')">
-                            <span>Console Log Output</span>
-                            <span class="arrow">▼</span>
-                        </div>
-                        <div class="console-log" id="log-ghi_getter">
-                            <pre>Terminal output will appear here...</pre>
-                        </div>
-                    </div>
-
-                    <!-- CARD 2: PV CLEANER -->
+                    <!-- CARD 1: PV CLEANER -->
                     <div class="module-card" id="card-pv_cleaner">
                         <div class="card-header">
-                            <span class="card-num">02</span>
+                            <span class="card-num">01</span>
                             <h3>PV Cleaner</h3>
                             <span class="status-badge idle">Idle</span>
                         </div>
@@ -131,10 +94,10 @@
                         </div>
                     </div>
 
-                    <!-- CARD 3: CONSUMPTION CLEANER -->
+                    <!-- CARD 2: CONSUMPTION CLEANER -->
                     <div class="module-card" id="card-con_cleaner">
                         <div class="card-header">
-                            <span class="card-num">03</span>
+                            <span class="card-num">02</span>
                             <h3>Consumption Cleaner</h3>
                             <span class="status-badge idle">Idle</span>
                         </div>
@@ -157,36 +120,10 @@
                         </div>
                     </div>
 
-                    <!-- CARD 4: CURTAILMENT -->
-                    <div class="module-card" id="card-curtailment">
-                        <div class="card-header">
-                            <span class="card-num">04</span>
-                            <h3>Curtailment Analysis</h3>
-                            <span class="status-badge idle">Idle</span>
-                        </div>
-                        <p class="card-desc">Analyzes PV curtailment schedules, models historical curtailment periods, and creates train-test splits for validation models.</p>
-                        <div class="card-actions">
-                            <button class="btn-primary" onclick="runScript('curtailment')">Run Curtailment</button>
-                        </div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div class="console-log-header" onclick="toggleConsole('curtailment')">
-                            <span>Console Log Output</span>
-                            <span class="arrow">▼</span>
-                        </div>
-                        <div class="console-log" id="log-curtailment">
-                            <pre>Terminal output will appear here...</pre>
-                        </div>
-                        <div class="visualization-area" id="viz-curtailment">
-                            <div class="viz-placeholder">Plot visualization will appear here upon successful run</div>
-                        </div>
-                    </div>
-
-                    <!-- CARD 5: BATTERY OPTIMIZER -->
+                    <!-- CARD 3: BATTERY OPTIMIZER -->
                     <div class="module-card" id="card-battery_optimizer">
                         <div class="card-header">
-                            <span class="card-num">05</span>
+                            <span class="card-num">03</span>
                             <h3>Battery Optimizer</h3>
                             <span class="status-badge idle">Idle</span>
                         </div>
@@ -271,7 +208,6 @@
                         <div class="gallery-tabs">
                             <button class="gallery-tab active" onclick="switchGallery('pv')">PV Clean</button>
                             <button class="gallery-tab" onclick="switchGallery('con')">Consumption Clean</button>
-                            <button class="gallery-tab" onclick="switchGallery('curtail')">Curtailment Analysis</button>
                             <button class="gallery-tab" onclick="switchGallery('battery')">Sizing Solution</button>
                         </div>
                         <div class="gallery-content">
@@ -281,10 +217,6 @@
                             </div>
                             <div class="gallery-img-container hidden" id="gallery-con">
                                 <img src="" alt="Consumption Cleaner Plot" class="gallery-img" onerror="imgError(this)">
-                                <div class="img-placeholder">Plot not generated yet. Run the pipeline to build this chart.</div>
-                            </div>
-                            <div class="gallery-img-container hidden" id="gallery-curtail">
-                                <img src="" alt="Curtailment Plot" class="gallery-img" onerror="imgError(this)">
                                 <div class="img-placeholder">Plot not generated yet. Run the pipeline to build this chart.</div>
                             </div>
                             <div class="gallery-img-container hidden" id="gallery-battery">
