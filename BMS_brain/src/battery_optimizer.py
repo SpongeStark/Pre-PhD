@@ -65,8 +65,21 @@ discount_rate = 0.04
 CRF = (discount_rate * (1 + discount_rate)**life_years) / ((1 + discount_rate)**life_years - 1) # Capital Recovery Factor
 
 C_E = 500.0 # Battery capacity cost [EUR/kWh]
-C_P = 200.0 # Battery inverter/power cost [EUR/kW]
-c_deg = 0.02 # Linearized marginal degradation cost [EUR/kWh throughput]
+C_P = 100.0 # Battery inverter/power cost [EUR/kW]
+
+# ===============
+# 1.1 Degradation cost. Using THE POLYNOMIAL APPROACH
+# ===============
+c_rep = 100 # Replacement cost of the battery capacit [EUR/kWh]
+# Coefficients of the degradation model from article of degradation costs
+SoC_min = 0.2       # Minimum State of Charge
+SoC_max = 0.9       # Maximum State of Char
+DoD = SoC_max - SoC_min # Depth of Discharge
+n_total = 5000
+
+
+c_deg = c_rep/(n_total*DoD) # Linearized marginal degradation cost [EUR/kWh throughput]
+
 
 # Technical Parameters
 eta_pv = 0.98       # PV MPPT efficiency

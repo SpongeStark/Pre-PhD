@@ -55,6 +55,7 @@ def build_optimization_model(T_horizon, params, PV_forecast, EV_forecast, lambda
             return m.E_B[t] == m.E_B[t-1] + (m.P_ch[t] * params['eta_c']) * dt - (m.P_dis[t] / params['eta_d']) * dt
     model.battery_dynamics = pyo.Constraint(model.T, rule=battery_dynamics_rule)
     
+    
     # ---------------------------------------------------------
     # 1.7 State of Charge
     # ---------------------------------------------------------
