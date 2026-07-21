@@ -51,6 +51,7 @@ async function updateSystemStatus() {
         if (!res.ok) throw new Error("Server communication error");
         
         const data = await res.json();
+        const previousState = JSON.parse(JSON.stringify(systemState));
         systemState = data;
         
         // Update connection status badge
@@ -69,7 +70,7 @@ async function updateSystemStatus() {
         }
         
         // Update cards and pipeline nodes
-        updateCards(data);
+        updateCards(data, previousState);
         updatePipelineNodes(data);
         
     } catch (err) {
@@ -82,7 +83,7 @@ async function updateSystemStatus() {
 }
 
 // Update DOM cards based on script states
-function updateCards(state) {
+function updateCards(state, previousState = {}) {
     const scripts = ["pv_cleaner", "con_cleaner", "battery_optimizer"];
     
     scripts.forEach(key => {
@@ -92,6 +93,7 @@ function updateCards(state) {
         const statusBadge = card.querySelector(".status-badge");
         const runBtn = card.querySelector(".btn-primary");
         const currentStatus = state[key].status;
+        const previousStatus = previousState[key] ? previousState[key].status : null;
         
         // Update Status Badge Class & Text
         statusBadge.className = `status-badge ${currentStatus}`;
@@ -103,6 +105,12 @@ function updateCards(state) {
             card.classList.remove("success", "error");
             runBtn.disabled = true;
             runBtn.textContent = "Executing...";
+            
+            // Hide sizing results panel if running
+            if (key === "battery_optimizer") {
+                const resultsPanel = document.getElementById("results-battery_optimizer");
+                if (resultsPanel) resultsPanel.classList.add("hidden");
+            }
             
             // Start polling logs if not already doing so
             startLogPolling(key);
@@ -116,17 +124,41 @@ function updateCards(state) {
                 card.classList.remove("error");
                 // Stop polling and display output plots
                 stopLogPolling(key);
-                displayPlot(key);
+                
+                // Only load the plot on transition to success
+                if (previousStatus !== "success") {
+                    displayPlot(key);
+                }
+                
+                // Show sizing metrics in the card if battery_optimizer
+                if (key === "battery_optimizer") {
+                    extractAndDisplaySizingMetrics(state[key].logs, "card-metric");
+                    const resultsPanel = document.getElementById("results-battery_optimizer");
+                    if (resultsPanel) resultsPanel.classList.remove("hidden");
+                }
             } else if (currentStatus === "error") {
                 card.classList.add("error");
                 card.classList.remove("success");
                 stopLogPolling(key);
+                
+                if (key === "battery_optimizer") {
+                    const resultsPanel = document.getElementById("results-battery_optimizer");
+                    if (resultsPanel) resultsPanel.classList.add("hidden");
+                }
+            } else {
+                // idle
+                if (key === "battery_optimizer") {
+                    const resultsPanel = document.getElementById("results-battery_optimizer");
+                    if (resultsPanel) resultsPanel.classList.add("hidden");
+                }
             }
         }
     });
 
     // Pipeline Specific Updates
     const pState = state["pipeline"];
+    const prevPState = previousState["pipeline"];
+    const prevPStatus = prevPState ? prevPState.status : null;
     const pBtn = document.getElementById("btn-run-pipeline");
     const pStatusText = document.getElementById("pipeline-status-text");
     const pFill = document.getElementById("pipeline-fill");
@@ -153,9 +185,17 @@ function updateCards(state) {
         if (pState.status === "success") {
             pFill.style.width = "100%";
             pPercent.textContent = "100%";
-            extractAndDisplaySizingMetrics(pState.logs);
-            // Load all gallery images
-            displayAllGalleryPlots();
+            
+            // Only update metrics and gallery plots when transitioning to success
+            if (prevPStatus !== "success") {
+                extractAndDisplaySizingMetrics(pState.logs, "metric");
+                // Also update the card metrics for consistency
+                extractAndDisplaySizingMetrics(pState.logs, "card-metric");
+                const resultsPanel = document.getElementById("results-battery_optimizer");
+                if (resultsPanel) resultsPanel.classList.remove("hidden");
+                // Load all gallery images
+                displayAllGalleryPlots();
+            }
         } else if (pState.status === "error") {
             pFill.style.width = "100%";
             pFill.style.background = "var(--neon-red)";
@@ -336,31 +376,37 @@ function imgError(img) {
 }
 
 // Parse battery sizing metrics from logs using regex
-function extractAndDisplaySizingMetrics(logs) {
+function extractAndDisplaySizingMetrics(logs, prefix = "metric") {
     const capacityMatch = logs.match(/Battery Capacity \(E_B_max\):\s*([\d\.]+)\s*kWh/i);
     const powerMatch = logs.match(/Battery Rated Power \(P_B_max\):\s*([\d\.]+)\s*kW/i);
     const costMatch = logs.match(/Total Annualized Cost \(CAPEX \+ OPEX\):\s*€\s*([\d\.,]+)/i);
     
-    const capEl = document.getElementById("metric-capacity");
-    const powEl = document.getElementById("metric-power");
-    const costEl = document.getElementById("metric-cost");
+    const capEl = document.getElementById(`${prefix}-capacity`);
+    const powEl = document.getElementById(`${prefix}-power`);
+    const costEl = document.getElementById(`${prefix}-cost`);
     
-    if (capacityMatch && capacityMatch[1]) {
-        capEl.textContent = `${parseFloat(capacityMatch[1]).toFixed(2)} kWh`;
-    } else {
-        capEl.textContent = "-- kWh";
+    if (capEl) {
+        if (capacityMatch && capacityMatch[1]) {
+            capEl.textContent = `${parseFloat(capacityMatch[1]).toFixed(2)} kWh`;
+        } else {
+            capEl.textContent = "-- kWh";
+        }
     }
     
-    if (powerMatch && powerMatch[1]) {
-        powEl.textContent = `${parseFloat(powerMatch[1]).toFixed(2)} kW`;
-    } else {
-        powEl.textContent = "-- kW";
+    if (powEl) {
+        if (powerMatch && powerMatch[1]) {
+            powEl.textContent = `${parseFloat(powerMatch[1]).toFixed(2)} kW`;
+        } else {
+            powEl.textContent = "-- kW";
+        }
     }
     
-    if (costMatch && costMatch[1]) {
-        costEl.textContent = `€${parseFloat(costMatch[1].replace(/,/g, '')).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-    } else {
-        costEl.textContent = "-- €";
+    if (costEl) {
+        if (costMatch && costMatch[1]) {
+            costEl.textContent = `€${parseFloat(costMatch[1].replace(/,/g, '')).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        } else {
+            costEl.textContent = "-- €";
+        }
     }
 }
 

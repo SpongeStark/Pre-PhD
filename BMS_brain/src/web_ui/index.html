@@ -134,6 +134,24 @@
                         <div class="progress-bar-container">
                             <div class="progress-bar"></div>
                         </div>
+                        <!-- Sizing Optimization Results -->
+                        <div class="optimization-results-panel hidden" id="results-battery_optimizer">
+                            <div class="panel-title">Sizing Solution Details</div>
+                            <div class="panel-grid">
+                                <div class="panel-metric">
+                                    <span class="p-label">Optimal Capacity</span>
+                                    <span class="p-val" id="card-metric-capacity">-- kWh</span>
+                                </div>
+                                <div class="panel-metric">
+                                    <span class="p-label">Optimal Power</span>
+                                    <span class="p-val" id="card-metric-power">-- kW</span>
+                                </div>
+                                <div class="panel-metric">
+                                    <span class="p-label">Annualized Cost</span>
+                                    <span class="p-val" id="card-metric-cost">-- €</span>
+                                </div>
+                            </div>
+                        </div>
                         <div class="console-log-header" onclick="toggleConsole('battery_optimizer')">
                             <span>Console Log Output</span>
                             <span class="arrow">▼</span>
