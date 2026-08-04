@@ -135,21 +135,22 @@ def build_optimization_model(T_horizon, params, PV_forecast, EV_forecast, lambda
 # ------------------------------------------------------------------
 params_dict = {
     'dt': 0.25, 
-    'eta_c': 0.975, 
-    'eta_d': 0.975, 
-    'eta_ac_dc': 0.97, 
-    'eta_dc_ac': 0.97, 
-    'eta_mppt': 0.98,
-    'eta_pvinverter': 0.96,  # NEW: Added from Eq 4
+    'eta_c': 0.95, 
+    'eta_d': 0.95, 
+    'eta_ac_dc': 0.99, 
+    'eta_dc_ac': 0.99, 
+    'eta_mppt': 0.99,
+    'eta_pvinverter': 0.98,  # NEW: Added from Eq 4
 
-    'P_B_max': 30.0, 
-    'E_B_max': 30.0, 
+
+    'P_B_max': 8.33, 
+    'E_B_max': 24.7, 
     'E_B_0': 5.0, 
     
     'D_ch': 0.8, 
     'D_dis': 0.1, 
-    'SoC_min': 0.1, 
-    'SoC_max': 1.0, 
+    'SoC_min': 0.2, 
+    'SoC_max': 0.9, 
     
     # NEW Economic & Tuning Parameters
     'C_0': 5000.0,           # Battery purchase price (Dummy Value: 5000 EUR)

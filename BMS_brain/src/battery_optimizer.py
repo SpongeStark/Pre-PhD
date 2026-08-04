@@ -66,6 +66,9 @@ CRF = (discount_rate * (1 + discount_rate)**life_years) / ((1 + discount_rate)**
 
 C_E = 500.0 # Battery capacity cost [EUR/kWh]
 C_P = 100.0 # Battery inverter/power cost [EUR/kW]
+eta_pv = 0.98       # PV MPPT efficiency
+eta_acdc = 0.95     # Grid rectifier efficiency
+eta_dcac = 0.95     # EV/Load inverter efficiency
 
 # ===============
 # 1.1 Degradation cost. Using THE POLYNOMIAL APPROACH
@@ -82,9 +85,9 @@ c_deg = c_rep/(n_total*DoD) # Linearized marginal degradation cost [EUR/kWh thro
 
 
 # Technical Parameters
-eta_pv = 0.99       # PV MPPT efficiency
-eta_acdc = 0.99     # Grid rectifier efficiency
-eta_dcac = 0.99     # EV/Load inverter efficiency
+# eta_pv = 0.99       # PV MPPT efficiency
+# eta_acdc = 0.99     # Grid rectifier efficiency
+# eta_dcac = 0.99     # EV/Load inverter efficiency
 eta_c = 0.95        # Battery charging efficiency
 eta_d = 0.95        # Battery discharging efficiency
 
