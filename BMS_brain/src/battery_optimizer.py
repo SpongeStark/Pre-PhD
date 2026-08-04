@@ -77,19 +77,18 @@ SoC_max = 0.9       # Maximum State of Char
 DoD = SoC_max - SoC_min # Depth of Discharge
 n_total = 5000
 
-
+    
 c_deg = c_rep/(n_total*DoD) # Linearized marginal degradation cost [EUR/kWh throughput]
 
 
 # Technical Parameters
-eta_pv = 0.98       # PV MPPT efficiency
-eta_acdc = 0.95     # Grid rectifier efficiency
-eta_dcac = 0.95     # EV/Load inverter efficiency
+eta_pv = 0.99       # PV MPPT efficiency
+eta_acdc = 0.99     # Grid rectifier efficiency
+eta_dcac = 0.99     # EV/Load inverter efficiency
 eta_c = 0.95        # Battery charging efficiency
 eta_d = 0.95        # Battery discharging efficiency
 
-SoC_min = 0.2       # Minimum State of Charge
-SoC_max = 0.9       # Maximum State of Charge
+
 c_rate = 0.5        # Max C-rate (e.g., 0.5C means a 10kWh battery can output max 5kW)
 
 # ==========================================
