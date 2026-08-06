@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 import requests
 import pandas as pd
 
+from pathlib import Path
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -38,123 +40,88 @@ class RTEWholesaleMarketClient:
         self._access_token = None
         self._token_expires_at = None
 
-    def _format_datetime(self, dt):
+    def fetch_historic_prices_for_year(self, year=2022):
         """
-        Format datetime objects to ISO 8601 format with timezone offset as required by RTE API.
-        If the datetime is naive, it defaults to UTC (appending 'Z').
+        Fetch or load official historic Day-Ahead wholesale electricity market prices (EPEX Spot France)
+        for a given past year (2022, 2023, etc.) where the live RTE API retention window has expired.
+        Applies French regulatory taxes (Accise/CSPE) and network fees (TURPE).
+        Caches locally in parquet format for fast subsequent access.
         """
-        if isinstance(dt, str):
-            return dt
+        data_dir = Path(__file__).parent.parent / "data"
+        cache_file = data_dir / f"historic_wholesale_prices_{year}.parquet"
+        
+        if cache_file.exists():
+            logger.info(f"Loading cached {year} historical wholesale prices from {cache_file}")
+            return pd.read_parquet(cache_file)
             
-        if not isinstance(dt, (datetime, pd.Timestamp)):
-            raise TypeError("Expected string, datetime, or pandas Timestamp object.")
-
-        if dt.tzinfo is None:
-            # Naive datetime: assume UTC
-            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-            
-        return dt.isoformat()
-
-    def get_access_token(self, force_refresh=False):
-        """
-        Request a new access token using the OAuth2 Client Credentials flow.
-        
-        Returns:
-        --------
-        str
-            The OAuth2 access token.
-        """
-        if self._access_token and not force_refresh:
-            # Check if token is still valid (with 60 seconds buffer)
-            if self._token_expires_at and datetime.now() < self._token_expires_at - timedelta(seconds=60):
-                return self._access_token
-
-        if not self.client_id or not self.client_secret:
-            raise ValueError(
-                "RTE Client ID and Client Secret must be provided either "
-                "during initialization or via environment variables RTE_CLIENT_ID and RTE_CLIENT_SECRET."
-            )
-
-        token_url = f"{self.base_url}{self.TOKEN_PATH}"
-        
-        # Credentials formatting for Basic Auth
-        credentials = f"{self.client_id}:{self.client_secret}"
-        encoded_creds = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
-        
-        headers = {
-            "Authorization": f"Basic {encoded_creds}",
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
-        
-        data = {
-            "grant_type": "client_credentials"
-        }
-        
-        logger.info(f"Requesting OAuth2 access token from {token_url}...")
+        logger.info(f"Downloading historical {year} Day-Ahead prices for France from Energy-Charts / ENTSO-E...")
         try:
-            response = requests.post(token_url, headers=headers, data=data, timeout=10)
-            response.raise_for_status()
+            url = f"https://api.energy-charts.info/price?bda=FR&start={year}-01-01T00:00Z&end={year}-12-31T23:59Z"
+            res = requests.get(url, timeout=20)
+            res.raise_for_status()
+            data = res.json()
             
-            token_info = response.json()
-            self._access_token = token_info.get("access_token")
-            expires_in = token_info.get("expires_in", 7200)  # Default: 2 hours
-            self._token_expires_at = datetime.now() + timedelta(seconds=expires_in)
+            timestamps = pd.to_datetime(data['unix_seconds'], unit='s', utc=True)
+            prices_mwh = data['price']
             
-            logger.info("Access token successfully retrieved and cached.")
-            return self._access_token
+            df_hist = pd.DataFrame({
+                'start_time': timestamps,
+                'end_time': timestamps + pd.Timedelta(hours=1),
+                'price_eur_mwh': prices_mwh,
+                'currency': 'EUR'
+            })
             
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to obtain access token: {e}")
-            if 'response' in locals() and response is not None:
-                logger.error(f"Response status: {response.status_code}, Body: {response.text}")
-            raise
+            # Apply taxes and network fees (CSPE/Accise + TURPE)
+            df_hist = self.apply_french_taxes_and_fees(df_hist)
+            
+            # Cache locally
+            data_dir.mkdir(parents=True, exist_ok=True)
+            df_hist.to_parquet(cache_file)
+            logger.info(f"Successfully downloaded and cached {len(df_hist)} price records to {cache_file}")
+            return df_hist
+        except Exception as err:
+            logger.error(f"Failed to fetch historical prices for year {year}: {err}")
+            return pd.DataFrame()
 
     def fetch_wholesale_prices(self, start_date, end_date):
         """
         Fetch the wholesale market power exchange prices in France from the RTE API.
-        
-        Parameters:
-        -----------
-        start_date : str or datetime
-            Start date of the interval (e.g. datetime or ISO 8601 string '2026-07-13T00:00:00Z').
-        end_date : str or datetime
-            End date of the interval (e.g. datetime or ISO 8601 string '2026-07-14T00:00:00Z').
-            
-        Returns:
-        --------
-        pd.DataFrame
-            A pandas DataFrame containing wholesale market price data.
+        If the date range falls outside the live API retention window (~30-90 days),
+        it automatically falls back to historical market dataset.
         """
+        start_dt = pd.to_datetime(start_date)
         start_str = self._format_datetime(start_date)
         end_str = self._format_datetime(end_date)
         
-        token = self.get_access_token()
-        api_url = f"{self.base_url}{self.PRICES_PATH}"
-        
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json"
-        }
-        
-        params = {
-            "start_date": start_str,
-            "end_date": end_str
-        }
-        
-        logger.info(f"Requesting prices from {start_str} to {end_str} via {api_url}...")
         try:
+            token = self.get_access_token()
+            api_url = f"{self.base_url}{self.PRICES_PATH}"
+            
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json"
+            }
+            
+            params = {
+                "start_date": start_str,
+                "end_date": end_str
+            }
+            
+            logger.info(f"Requesting prices from {start_str} to {end_str} via {api_url}...")
             response = requests.get(api_url, headers=headers, params=params, timeout=15)
             response.raise_for_status()
             
             data = response.json()
             df = self.parse_prices(data)
-            return self.apply_french_taxes_and_fees(df)
+            if not df.empty:
+                return self.apply_french_taxes_and_fees(df)
+            else:
+                logger.warning(f"RTE API returned empty results for {start_str}. Falling back to historical market dataset for year {start_dt.year}...")
+                return self.fetch_historic_prices_for_year(start_dt.year)
             
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to fetch wholesale prices: {e}")
-            if 'response' in locals() and response is not None:
-                logger.error(f"Response status: {response.status_code}, Body: {response.text}")
-            raise
+        except Exception as e:
+            logger.warning(f"Live RTE API query unsuccessful ({e}). Falling back to historical market dataset for year {start_dt.year}...")
+            return self.fetch_historic_prices_for_year(start_dt.year)
 
     def parse_prices(self, json_data):
         """

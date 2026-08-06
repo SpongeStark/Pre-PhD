@@ -36,25 +36,44 @@ time_steps = range(T)
 pv_profile = df['PV'].fillna(0).values
 load_profile = df['c_gen'].fillna(0).values
 
-# Electricity Tariff (Time-of-Use / Real-Time RTE API)
-print("\nFetching real-time energy prices from RTE API...")
+# Electricity Tariff (2022 Historic RTE/EPEX Spot Market Prices + Taxes & TURPE)
+print("\nFetching historic 2022 wholesale energy prices (EPEX Spot France)...")
+min_date = df['Date'].min()
+max_date = df['Date'].max()
+
 try:
     client = RTEWholesaleMarketClient()
-    rt_profile = client.get_representative_24h_profile()
+    # Fetch/load historical 2022 prices matching the dataset date range
+    df_prices = client.fetch_wholesale_prices(min_date, max_date + pd.Timedelta(minutes=15))
     
-    if rt_profile:
-        print("Successfully retrieved 24-hour real-time price profile from RTE API.")
-        # Map to the dataset based on hour and minute of the day
-        tariff_profile = df['Date'].apply(lambda x: rt_profile.get((x.hour, x.minute), 0.15)).values
+    if not df_prices.empty and 'total_price_eur_kwh' in df_prices.columns:
+        # Parse timestamp to match local dataset
+        df_prices['Date'] = pd.to_datetime(df_prices['start_time']).dt.tz_localize(None)
         
-        # Log pricing statistics
-        print(f"RTE Tariff stats - Min: {tariff_profile.min():.4f} €/kWh, Max: {tariff_profile.max():.4f} €/kWh, Mean: {tariff_profile.mean():.4f} €/kWh")
+        # Avoid column collisions if re-run
+        for col in ['total_price_eur_kwh', 'price_eur_kwh', 'turpe_eur_kwh', 'accise_eur_kwh']:
+            if col in df.columns:
+                df = df.drop(columns=[col])
+                
+        # Merge prices onto 15-minute dataset timestamps via nearest interpolation
+        df = pd.merge_asof(
+            df.sort_values('Date'), 
+            df_prices[['Date', 'total_price_eur_kwh', 'price_eur_kwh', 'turpe_eur_kwh', 'accise_eur_kwh']].sort_values('Date'), 
+            on='Date', 
+            direction='nearest'
+        )
+        tariff_profile = df['total_price_eur_kwh'].fillna(0.15).values
+        print(f"Successfully loaded {len(df_prices)} 2022 historical price records.")
+        print(f"2022 Total Tariff Stats (Wholesale + Accise + TURPE):")
+        print(f"  - Min  : {tariff_profile.min():.4f} €/kWh")
+        print(f"  - Max  : {tariff_profile.max():.4f} €/kWh")
+        print(f"  - Mean : {tariff_profile.mean():.4f} €/kWh")
     else:
-        print("RTE API returned empty profile. Falling back to synthetic Time-of-Use tariff.")
+        print("Could not retrieve 2022 price data. Falling back to synthetic Time-of-Use tariff.")
         hours = df['Date'].dt.hour
         tariff_profile = np.where((hours >= 16) & (hours <= 21), 0.25, 0.15)
 except Exception as e:
-    print(f"Failed to fetch from RTE API ({e}). Falling back to synthetic Time-of-Use tariff.")
+    print(f"Failed to fetch 2022 prices ({e}). Falling back to synthetic Time-of-Use tariff.")
     hours = df['Date'].dt.hour
     tariff_profile = np.where((hours >= 16) & (hours <= 21), 0.25, 0.15)
 
@@ -66,9 +85,9 @@ CRF = (discount_rate * (1 + discount_rate)**life_years) / ((1 + discount_rate)**
 
 C_E = 500.0 # Battery capacity cost [EUR/kWh]
 C_P = 100.0 # Battery inverter/power cost [EUR/kW]
-eta_pv = 0.98       # PV MPPT efficiency
-eta_acdc = 0.95     # Grid rectifier efficiency
-eta_dcac = 0.95     # EV/Load inverter efficiency
+# eta_pv = 0.98       # PV MPPT efficiency
+# eta_acdc = 0.95     # Grid rectifier efficiency
+# eta_dcac = 0.95     # EV/Load inverter efficiency
 
 # ===============
 # 1.1 Degradation cost. Using THE POLYNOMIAL APPROACH
@@ -85,9 +104,9 @@ c_deg = c_rep/(n_total*DoD) # Linearized marginal degradation cost [EUR/kWh thro
 
 
 # Technical Parameters
-# eta_pv = 0.99       # PV MPPT efficiency
-# eta_acdc = 0.99     # Grid rectifier efficiency
-# eta_dcac = 0.99     # EV/Load inverter efficiency
+eta_pv = 0.99       # PV MPPT efficiency
+eta_acdc = 0.99     # Grid rectifier efficiency
+eta_dcac = 0.99     # EV/Load inverter efficiency
 eta_c = 0.95        # Battery charging efficiency
 eta_d = 0.95        # Battery discharging efficiency
 
