@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
+# import seaborn as sns
 
 # Set style for professional publication-quality figures
 plt.style.use('seaborn-v0_8-whitegrid' if 'seaborn-v0_8-whitegrid' in plt.style.available else 'default')
@@ -79,9 +79,11 @@ def add_season_and_time_features(df):
         
     return df
 
-def generate_source_seasonality_plot(df, value_col, title_prefix, color_palette, save_filename):
-    """Generates a 3-panel seasonality analysis figure for a single data source."""
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5.5))
+def generate_source_seasonality_plot(df, value_col, title_prefix, color_palette, save_filename, show_weekly=True):
+    """Generates a seasonality analysis figure for a single data source."""
+    n_cols = 3 if show_weekly else 2
+    fig_width = 18 if show_weekly else 13
+    fig, axes = plt.subplots(1, n_cols, figsize=(fig_width, 5.5))
     
     season_colors = {
         'Winter': '#2b5c8f',
@@ -90,37 +92,59 @@ def generate_source_seasonality_plot(df, value_col, title_prefix, color_palette,
         'Autumn': '#d62728'
     }
 
-    # 1. Diurnal Seasonality Profile by Season (24-hour average)
+    # 1. Diurnal Seasonality Profile by Season (24-hour average + shaded IQR variance band)
     ax1 = axes[0]
-    hourly_season = df.groupby(['season', 'hour'], observed=False)[value_col].mean().reset_index()
+    grouped_hourly = df.groupby(['season', 'hour'], observed=False)[value_col]
+    hourly_mean = grouped_hourly.mean().rename('mean')
+    hourly_q25 = grouped_hourly.quantile(0.25).rename('q25')
+    hourly_q75 = grouped_hourly.quantile(0.75).rename('q75')
+    hourly_season = pd.concat([hourly_mean, hourly_q25, hourly_q75], axis=1).reset_index()
+
     for season in ['Winter', 'Spring', 'Summer', 'Autumn']:
         data_s = hourly_season[hourly_season['season'] == season]
-        ax1.plot(data_s['hour'], data_s[value_col], label=season, color=season_colors[season], linewidth=2.5)
+        ax1.plot(data_s['hour'], data_s['mean'], label=season, color=season_colors[season], linewidth=2.5)
+        ax1.fill_between(
+            data_s['hour'],
+            data_s['q25'],
+            data_s['q75'],
+            color=season_colors[season],
+            alpha=0.18
+        )
     
     ax1.set_title(f'1. Diurnal Profile by Season ({title_prefix})', fontsize=12, fontweight='bold', pad=10)
     ax1.set_xlabel('Hour of Day (UTC)', fontsize=10)
-    ax1.set_ylabel('Average Power (kW)', fontsize=10)
+    ax1.set_ylabel('Power (kW)', fontsize=10)
     ax1.set_xticks(range(0, 24, 3))
     ax1.grid(True, linestyle='--', alpha=0.6)
-    ax1.legend(title='Season', frameon=True, facecolor='white', edgecolor='none')
+    ax1.legend(title='Season (Mean & IQR)', frameon=True, facecolor='white', edgecolor='none')
 
-    # 2. Weekly Seasonality Profile (Day of Week)
-    ax2 = axes[1]
-    weekly_season = df.groupby(['day_name', 'season'], observed=False)[value_col].mean().unstack()
-    weekly_season.plot(kind='bar', ax=ax2, color=[season_colors[s] for s in weekly_season.columns], width=0.8)
-    ax2.set_title(f'2. Weekly Profile by Day of Week ({title_prefix})', fontsize=12, fontweight='bold', pad=10)
-    ax2.set_xlabel('Day of Week', fontsize=10)
-    ax2.set_ylabel('Average Power (kW)', fontsize=10)
-    ax2.set_xticklabels(weekly_season.index, rotation=0)
-    ax2.grid(True, linestyle='--', alpha=0.6, axis='y')
-    ax2.legend(title='Season', frameon=True, facecolor='white', edgecolor='none')
+    if show_weekly:
+        # 2. Weekly Seasonality Profile (Day of Week)
+        ax2 = axes[1]
+        weekly_season = df.groupby(['day_name', 'season'], observed=False)[value_col].mean().unstack()
+        weekly_season.plot(kind='bar', ax=ax2, color=[season_colors[s] for s in weekly_season.columns if s in season_colors], width=0.8)
+        ax2.set_title(f'2. Weekly Profile by Day of Week ({title_prefix})', fontsize=12, fontweight='bold', pad=10)
+        ax2.set_xlabel('Day of Week', fontsize=10)
+        ax2.set_ylabel('Average Power (kW)', fontsize=10)
+        ax2.set_xticklabels(weekly_season.index, rotation=0)
+        ax2.grid(True, linestyle='--', alpha=0.6, axis='y')
+        ax2.legend(title='Season', frameon=True, facecolor='white', edgecolor='none')
+        
+        ax3 = axes[2]
+        panel_num = 3
+    else:
+        ax3 = axes[1]
+        panel_num = 2
 
-    # 3. Monthly Seasonality Profile (Average & Peak Power)
-    ax3 = axes[2]
-    monthly_stats = df.groupby('month_name', observed=False)[value_col].agg(['mean', 'max']).reset_index()
+    # 3. Monthly Seasonality Profile (Average & 95th Percentile Power)
+    grouped_monthly = df.groupby('month_name', observed=False)[value_col]
+    m_mean = grouped_monthly.mean().rename('mean')
+    m_p95 = grouped_monthly.quantile(0.95).rename('p95')
+    monthly_stats = pd.concat([m_mean, m_p95], axis=1).reset_index()
+
     ax3.bar(monthly_stats['month_name'], monthly_stats['mean'], label='Average Power (kW)', color=color_palette[0], alpha=0.85, width=0.6)
-    ax3.plot(monthly_stats['month_name'], monthly_stats['max'], label='Peak Power (kW)', color='#d95f02', marker='o', linewidth=2)
-    ax3.set_title(f'3. Monthly Distribution ({title_prefix})', fontsize=12, fontweight='bold', pad=10)
+    ax3.plot(monthly_stats['month_name'], monthly_stats['p95'], label='95th Percentile Power (kW)', color='#d95f02', marker='o', linewidth=2)
+    ax3.set_title(f'{panel_num}. Monthly Distribution ({title_prefix})', fontsize=12, fontweight='bold', pad=10)
     ax3.set_xlabel('Month', fontsize=10)
     ax3.set_ylabel('Power (kW)', fontsize=10)
     ax3.grid(True, linestyle='--', alpha=0.6, axis='y')
@@ -134,14 +158,15 @@ def generate_source_seasonality_plot(df, value_col, title_prefix, color_palette,
     print(f"Saved seasonality plot: {save_path}")
     plt.close()
 
-def generate_combined_overview_plot(df_pv, df_con, df_ev):
-    """Generates an overview plot comparing seasonal profiles across all 3 data sources."""
-    fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=True)
+def generate_combined_overview_plot(df_pv, df_con, df_ev, df_net):
+    """Generates an overview plot comparing seasonal profiles across all data sources including Net Load."""
+    fig, axes = plt.subplots(4, 1, figsize=(14, 14), sharex=True)
 
     sources = [
-        (df_pv, 'PV', 'Solar PV Generation Seasonality (kW)', '#e6ab02'),
-        (df_con, 'c_gen', 'Building Consumption Seasonality (kW)', '#7570b3'),
-        (df_ev, 'c_ev', 'EV Charging Seasonality (kW)', '#1b9e77')
+        (df_pv, 'PV', 'Solar PV Generation (kW)', '#e6ab02'),
+        (df_con, 'c_gen', 'Building Consumption (kW)', '#7570b3'),
+        (df_ev, 'c_ev', 'EV Charging Demand (kW)', '#1b9e77'),
+        (df_net, 'net_load', 'Net Load Profile (Building + EV - PV) (kW)', '#d95f02')
     ]
 
     season_colors = {
@@ -153,20 +178,32 @@ def generate_combined_overview_plot(df_pv, df_con, df_ev):
 
     for idx, (df, col, ylabel, base_color) in enumerate(sources):
         ax = axes[idx]
-        hourly_season = df.groupby(['season', 'hour'], observed=False)[col].mean().reset_index()
+        grouped_hourly = df.groupby(['season', 'hour'], observed=False)[col]
+        h_mean = grouped_hourly.mean().rename('mean')
+        h_q25 = grouped_hourly.quantile(0.25).rename('q25')
+        h_q75 = grouped_hourly.quantile(0.75).rename('q75')
+        hourly_season = pd.concat([h_mean, h_q25, h_q75], axis=1).reset_index()
+
         for season in ['Winter', 'Spring', 'Summer', 'Autumn']:
             data_s = hourly_season[hourly_season['season'] == season]
-            ax.plot(data_s['hour'], data_s[col], label=season, color=season_colors[season], linewidth=2.5)
+            ax.plot(data_s['hour'], data_s['mean'], label=season, color=season_colors[season], linewidth=2.5)
+            ax.fill_between(
+                data_s['hour'],
+                data_s['q25'],
+                data_s['q75'],
+                color=season_colors[season],
+                alpha=0.18
+            )
         
         ax.set_title(f'Diurnal Profile: {ylabel}', fontsize=12, fontweight='bold', pad=8)
         ax.set_ylabel('Power (kW)', fontsize=10)
         ax.grid(True, linestyle='--', alpha=0.6)
-        ax.legend(title='Season', loc='upper right', frameon=True, facecolor='white')
+        ax.legend(title='Season (Mean & IQR)', loc='upper right', frameon=True, facecolor='white')
 
     axes[-1].set_xlabel('Hour of Day (UTC)', fontsize=11)
     axes[-1].set_xticks(range(0, 24, 1))
 
-    plt.suptitle('Multi-Source Diurnal Seasonality Comparison (PV vs. Building vs. EV)', fontsize=15, fontweight='bold', y=0.99)
+    plt.suptitle('Multi-Source Diurnal Seasonality Comparison (PV vs. Building vs. EV vs. Net Load)', fontsize=15, fontweight='bold', y=0.995)
     plt.tight_layout()
 
     save_path = output_dir / "all_sources_seasonality_overview.png"
@@ -183,31 +220,49 @@ def main():
     df_con = add_season_and_time_features(df_con)
     df_ev = add_season_and_time_features(df_ev)
 
-    # 1. PV Seasonality Plot
+    # Calculate Net Load dataset: (Building Consumption + EV Charging) - PV Generation
+    df_net = pd.merge(df_con[['Date', 'c_gen']], df_ev[['Date', 'c_ev']], on='Date')
+    df_net = pd.merge(df_net, df_pv[['Date', 'PV']], on='Date')
+    df_net['net_load'] = df_net['c_gen'] + df_net['c_ev'] - df_net['PV']
+    df_net = add_season_and_time_features(df_net)
+
+    # 1. PV Seasonality Plot (Diurnal with variance bands & Monthly 95th percentile, no weekly profile)
     generate_source_seasonality_plot(
         df_pv, 'PV', 'Solar PV Generation',
         color_palette=['#e6ab02'],
-        save_filename='pv_seasonality_plot.png'
+        save_filename='pv_seasonality_plot.png',
+        show_weekly=False
     )
 
-    # 2. Building Consumption Seasonality Plot
+    # 2. Building Consumption Seasonality Plot (Diurnal with variance bands, Weekly, Monthly 95th percentile)
     generate_source_seasonality_plot(
         df_con, 'c_gen', 'Building Consumption',
         color_palette=['#7570b3'],
-        save_filename='consumption_seasonality_plot.png'
+        save_filename='consumption_seasonality_plot.png',
+        show_weekly=True
     )
 
-    # 3. EV Charging Seasonality Plot
+    # 3. EV Charging Seasonality Plot (Diurnal with variance bands, Weekly, Monthly 95th percentile)
     generate_source_seasonality_plot(
         df_ev, 'c_ev', 'EV Charging Demand',
         color_palette=['#1b9e77'],
-        save_filename='ev_seasonality_plot.png'
+        save_filename='ev_seasonality_plot.png',
+        show_weekly=True
     )
 
-    # 4. Multi-Source Overview Seasonality Plot
-    generate_combined_overview_plot(df_pv, df_con, df_ev)
+    # 4. Aggregated Net Load Seasonality Plot (Diurnal with variance bands, Weekly, Monthly 95th percentile)
+    generate_source_seasonality_plot(
+        df_net, 'net_load', 'Net Load Profile (Building + EV - PV)',
+        color_palette=['#d95f02'],
+        save_filename='net_load_seasonality_plot.png',
+        show_weekly=True
+    )
+
+    # 5. Multi-Source Overview Seasonality Plot
+    generate_combined_overview_plot(df_pv, df_con, df_ev, df_net)
 
     print(f"\nAll seasonality plots successfully exported to: {output_dir}")
 
 if __name__ == "__main__":
     main()
+
