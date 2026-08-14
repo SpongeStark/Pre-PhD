@@ -55,7 +55,7 @@ for year in years:
     print(f"Downloading {year} GHI data from Open-Meteo...")
     url = (
         f"https://archive-api.open-meteo.com/v1/archive?"
-        f"latitude=48.73&longitude=2.42&"
+        f"latitude=48.7113685&longitude=2.3063622&"
         f"start_date={year}-01-01&end_date={year}-12-31&"
         f"hourly=shortwave_radiation&"
         f"timezone=UTC"
