@@ -7,6 +7,8 @@ let systemState = {};
 document.addEventListener("DOMContentLoaded", () => {
     // Initial fetch of system status
     updateSystemStatus();
+    // Load initial forecast metrics
+    loadForecastMetrics();
     // Start continuous status updates every 2 seconds
     setInterval(updateSystemStatus, 2000);
 });
@@ -84,35 +86,24 @@ async function updateSystemStatus() {
 
 // Update DOM cards based on script states
 function updateCards(state, previousState = {}) {
-    const scripts = ["pv_cleaner", "con_cleaner", "battery_optimizer"];
-    
-    scripts.forEach(key => {
+    // 1. Standard single modules (PV, Con)
+    ["pv_cleaner", "con_cleaner"].forEach(key => {
         const card = document.getElementById(`card-${key}`);
         if (!card) return;
         
         const statusBadge = card.querySelector(".status-badge");
         const runBtn = card.querySelector(".btn-primary");
-        const currentStatus = state[key].status;
-        const previousStatus = previousState[key] ? previousState[key].status : null;
+        const currentStatus = state[key]?.status || "idle";
+        const previousStatus = previousState[key]?.status || null;
         
-        // Update Status Badge Class & Text
         statusBadge.className = `status-badge ${currentStatus}`;
         statusBadge.textContent = currentStatus;
         
-        // Handle Active Run States
         if (currentStatus === "running") {
             card.classList.add("running");
             card.classList.remove("success", "error");
             runBtn.disabled = true;
             runBtn.textContent = "Executing...";
-            
-            // Hide sizing results panel if running
-            if (key === "battery_optimizer") {
-                const resultsPanel = document.getElementById("results-battery_optimizer");
-                if (resultsPanel) resultsPanel.classList.add("hidden");
-            }
-            
-            // Start polling logs if not already doing so
             startLogPolling(key);
         } else {
             card.classList.remove("running");
@@ -122,38 +113,130 @@ function updateCards(state, previousState = {}) {
             if (currentStatus === "success") {
                 card.classList.add("success");
                 card.classList.remove("error");
-                // Stop polling and display output plots
                 stopLogPolling(key);
-                
-                // Only load the plot on transition to success
                 if (previousStatus !== "success") {
                     displayPlot(key);
-                }
-                
-                // Show sizing metrics in the card if battery_optimizer
-                if (key === "battery_optimizer") {
-                    extractAndDisplaySizingMetrics(state[key].logs, "card-metric");
-                    const resultsPanel = document.getElementById("results-battery_optimizer");
-                    if (resultsPanel) resultsPanel.classList.remove("hidden");
                 }
             } else if (currentStatus === "error") {
                 card.classList.add("error");
                 card.classList.remove("success");
                 stopLogPolling(key);
-                
-                if (key === "battery_optimizer") {
-                    const resultsPanel = document.getElementById("results-battery_optimizer");
-                    if (resultsPanel) resultsPanel.classList.add("hidden");
-                }
-            } else {
-                // idle
-                if (key === "battery_optimizer") {
-                    const resultsPanel = document.getElementById("results-battery_optimizer");
-                    if (resultsPanel) resultsPanel.classList.add("hidden");
-                }
             }
         }
     });
+
+    // 2. Battery Optimizer (Triple Mode: Supermarket Base, Lidl EV, & Caltech EV)
+    const cardOpt = document.getElementById("card-battery_optimizer");
+    if (cardOpt) {
+        const btnBase = document.getElementById("btn-run-base");
+        const btnEV = document.getElementById("btn-run-ev");
+        const btnCaltech = document.getElementById("btn-run-caltech");
+        const statusBadgeOpt = cardOpt.querySelector(".status-badge");
+        const modeBadge = document.getElementById("card-metric-mode");
+        const resultsPanel = document.getElementById("results-battery_optimizer");
+        
+        const optBase = state["battery_optimizer"] || { status: "idle", logs: "" };
+        const optEV = state["battery_optimizer_ev"] || { status: "idle", logs: "" };
+        const optCaltech = state["battery_optimizer_caltech"] || { status: "idle", logs: "" };
+        const prevBase = previousState["battery_optimizer"] || { status: "idle" };
+        const prevEV = previousState["battery_optimizer_ev"] || { status: "idle" };
+        const prevCaltech = previousState["battery_optimizer_caltech"] || { status: "idle" };
+        
+        const isBaseRunning = optBase.status === "running";
+        const isEVRunning = optEV.status === "running";
+        const isCaltechRunning = optCaltech.status === "running";
+        
+        if (isBaseRunning || isEVRunning || isCaltechRunning) {
+            cardOpt.classList.add("running");
+            cardOpt.classList.remove("success", "error");
+            statusBadgeOpt.className = "status-badge running";
+            
+            if (isBaseRunning) {
+                statusBadgeOpt.textContent = "running (supermarket)";
+                if (btnBase) { btnBase.disabled = true; btnBase.textContent = "Executing Base..."; }
+                if (btnEV) { btnEV.disabled = true; }
+                if (btnCaltech) { btnCaltech.disabled = true; }
+                startLogPolling("battery_optimizer");
+            } else if (isEVRunning) {
+                statusBadgeOpt.textContent = "running (lidl ev)";
+                if (btnEV) { btnEV.disabled = true; btnEV.textContent = "Executing Lidl EV..."; }
+                if (btnBase) { btnBase.disabled = true; }
+                if (btnCaltech) { btnCaltech.disabled = true; }
+                startLogPolling("battery_optimizer_ev");
+            } else {
+                statusBadgeOpt.textContent = "running (caltech ev)";
+                if (btnCaltech) { btnCaltech.disabled = true; btnCaltech.textContent = "Executing Caltech EV..."; }
+                if (btnBase) { btnBase.disabled = true; }
+                if (btnEV) { btnEV.disabled = true; }
+                startLogPolling("battery_optimizer_caltech");
+            }
+            if (resultsPanel) resultsPanel.classList.add("hidden");
+        } else {
+            cardOpt.classList.remove("running");
+            if (btnBase) { btnBase.disabled = false; btnBase.textContent = "Run Supermarket Only"; }
+            if (btnEV) { btnEV.disabled = false; btnEV.textContent = "⚡ Run EV Chargers Only"; }
+            if (btnCaltech) { btnCaltech.disabled = false; btnCaltech.textContent = "🎓 Run Caltech EV Only"; }
+            
+            // Check if Caltech EV just succeeded
+            if (optCaltech.status === "success" && (prevCaltech.status !== "success" || !resultsPanel || resultsPanel.classList.contains("hidden") && modeBadge?.classList.contains("caltech"))) {
+                cardOpt.classList.add("success");
+                cardOpt.classList.remove("error");
+                statusBadgeOpt.className = "status-badge success";
+                statusBadgeOpt.textContent = "success (caltech)";
+                stopLogPolling("battery_optimizer_caltech");
+                
+                if (modeBadge) {
+                    modeBadge.textContent = "🎓 Caltech EV Only";
+                    modeBadge.className = "mode-badge caltech";
+                }
+                extractAndDisplaySizingMetrics(optCaltech.logs, "card-metric");
+                if (resultsPanel) resultsPanel.classList.remove("hidden");
+                displayPlot("battery_optimizer_caltech");
+            }
+            // Check if EV just succeeded
+            else if (optEV.status === "success" && (prevEV.status !== "success" || !resultsPanel || resultsPanel.classList.contains("hidden") && modeBadge?.classList.contains("ev"))) {
+                cardOpt.classList.add("success");
+                cardOpt.classList.remove("error");
+                statusBadgeOpt.className = "status-badge success";
+                statusBadgeOpt.textContent = "success (lidl ev)";
+                stopLogPolling("battery_optimizer_ev");
+                
+                if (modeBadge) {
+                    modeBadge.textContent = "⚡ EV Chargers Only";
+                    modeBadge.className = "mode-badge ev";
+                }
+                extractAndDisplaySizingMetrics(optEV.logs, "card-metric");
+                if (resultsPanel) resultsPanel.classList.remove("hidden");
+                displayPlot("battery_optimizer_ev");
+            }
+            // Check if Base just succeeded
+            else if (optBase.status === "success" && (prevBase.status !== "success" || !resultsPanel || resultsPanel.classList.contains("hidden") && !modeBadge?.classList.contains("ev") && !modeBadge?.classList.contains("caltech"))) {
+                cardOpt.classList.add("success");
+                cardOpt.classList.remove("error");
+                statusBadgeOpt.className = "status-badge success";
+                statusBadgeOpt.textContent = "success (supermarket)";
+                stopLogPolling("battery_optimizer");
+                
+                if (modeBadge) {
+                    modeBadge.textContent = "Supermarket Only";
+                    modeBadge.className = "mode-badge";
+                }
+                extractAndDisplaySizingMetrics(optBase.logs, "card-metric");
+                if (resultsPanel) resultsPanel.classList.remove("hidden");
+                displayPlot("battery_optimizer");
+            }
+            // Error handling
+            else if (optBase.status === "error" || optEV.status === "error" || optCaltech.status === "error") {
+                cardOpt.classList.add("error");
+                cardOpt.classList.remove("success");
+                statusBadgeOpt.className = "status-badge error";
+                statusBadgeOpt.textContent = "error";
+                stopLogPolling("battery_optimizer");
+                stopLogPolling("battery_optimizer_ev");
+                stopLogPolling("battery_optimizer_caltech");
+            }
+        }
+    }
 
     // Pipeline Specific Updates
     const pState = state["pipeline"];
@@ -241,13 +324,20 @@ function updatePipelineNodes(state) {
 function startLogPolling(scriptKey) {
     if (activePolls[scriptKey]) return; // already polling
     
+    let targetBoxId = `log-${scriptKey}`;
+    if (scriptKey === "battery_optimizer" || scriptKey === "battery_optimizer_ev" || scriptKey === "battery_optimizer_caltech") {
+        targetBoxId = "log-battery_optimizer";
+    } else if (scriptKey.startsWith("forecast_")) {
+        targetBoxId = "log-forecast";
+    }
+    
     const pollFunc = async () => {
         try {
             const res = await fetch(`${API_BASE}/api/logs?script=${scriptKey}`);
             if (!res.ok) throw new Error("Log fetch error");
             const data = await res.json();
             
-            const logBox = document.getElementById(`log-${scriptKey}`);
+            const logBox = document.getElementById(targetBoxId);
             if (logBox) {
                 const pre = logBox.querySelector("pre");
                 pre.textContent = data.logs;
@@ -259,6 +349,9 @@ function startLogPolling(scriptKey) {
             if (data.status !== "running") {
                 stopLogPolling(scriptKey);
                 updateSystemStatus(); // refresh status immediately
+                if (scriptKey.startsWith("forecast_")) {
+                    loadForecastMetrics();
+                }
             }
         } catch (err) {
             console.error("Log Poll Failed:", err);
@@ -293,17 +386,26 @@ async function runScript(scriptKey) {
             return;
         }
         
+        let targetBoxId = `log-${scriptKey}`;
+        if (scriptKey === "battery_optimizer" || scriptKey === "battery_optimizer_ev" || scriptKey === "battery_optimizer_caltech") {
+            targetBoxId = "log-battery_optimizer";
+        } else if (scriptKey.startsWith("forecast_")) {
+            targetBoxId = "log-forecast";
+        }
+            
         // Collapse other logs and expand the current one
         document.querySelectorAll(".console-log").forEach(box => {
-            if (box.id !== `log-${scriptKey}`) {
+            if (box.id !== targetBoxId && box.id !== "log-pipeline" && box.id !== "log-forecast") {
                 box.classList.add("collapsed");
-                box.previousElementSibling.classList.add("collapsed");
+                if (box.previousElementSibling) box.previousElementSibling.classList.add("collapsed");
             }
         });
         
-        const currentBox = document.getElementById(`log-${scriptKey}`);
-        currentBox.classList.remove("collapsed");
-        currentBox.previousElementSibling.classList.remove("collapsed");
+        const currentBox = document.getElementById(targetBoxId);
+        if (currentBox) {
+            currentBox.classList.remove("collapsed");
+            if (currentBox.previousElementSibling) currentBox.previousElementSibling.classList.remove("collapsed");
+        }
         
         updateSystemStatus();
     } catch (err) {
@@ -337,7 +439,9 @@ function getPlotFileName(scriptKey) {
     const mapping = {
         "pv_cleaner": "data_cleaner_results.png",
         "con_cleaner": "data_cleaner_con_results.png",
-        "battery_optimizer": "optimization_results.png"
+        "battery_optimizer": "optimization_results.png",
+        "battery_optimizer_ev": "optimization_results_ev.png",
+        "battery_optimizer_caltech": "optimization_results_caltech.png"
     };
     return mapping[scriptKey];
 }
@@ -347,7 +451,10 @@ function displayPlot(scriptKey) {
     const filename = getPlotFileName(scriptKey);
     if (!filename) return;
     
-    const container = document.getElementById(`viz-${scriptKey}`);
+    const containerId = (scriptKey === "battery_optimizer" || scriptKey === "battery_optimizer_ev" || scriptKey === "battery_optimizer_caltech") 
+        ? "viz-battery_optimizer" 
+        : `viz-${scriptKey}`;
+    const container = document.getElementById(containerId);
     if (!container) return;
     
     // Add cache-busting timestamp
@@ -359,9 +466,20 @@ function displayPlot(scriptKey) {
 function displayAllGalleryPlots() {
     const t = new Date().getTime();
     
-    document.querySelector("#gallery-pv img").src = `${API_BASE}/api/plots/data_cleaner_results.png?t=${t}`;
-    document.querySelector("#gallery-con img").src = `${API_BASE}/api/plots/data_cleaner_con_results.png?t=${t}`;
-    document.querySelector("#gallery-battery img").src = `${API_BASE}/api/plots/optimization_results.png?t=${t}`;
+    const pv = document.querySelector("#gallery-pv img");
+    if (pv) pv.src = `${API_BASE}/api/plots/data_cleaner_results.png?t=${t}`;
+    
+    const con = document.querySelector("#gallery-con img");
+    if (con) con.src = `${API_BASE}/api/plots/data_cleaner_con_results.png?t=${t}`;
+    
+    const bat = document.querySelector("#gallery-battery img");
+    if (bat) bat.src = `${API_BASE}/api/plots/optimization_results.png?t=${t}`;
+    
+    const batEV = document.querySelector("#gallery-battery_ev img");
+    if (batEV) batEV.src = `${API_BASE}/api/plots/optimization_results_ev.png?t=${t}`;
+    
+    const batCaltech = document.querySelector("#gallery-battery_caltech img");
+    if (batCaltech) batCaltech.src = `${API_BASE}/api/plots/optimization_results_caltech.png?t=${t}`;
 }
 
 // Image load fail fallback
@@ -379,7 +497,7 @@ function imgError(img) {
 function extractAndDisplaySizingMetrics(logs, prefix = "metric") {
     const capacityMatch = logs.match(/Battery Capacity \(E_B_max\):\s*([\d\.]+)\s*kWh/i);
     const powerMatch = logs.match(/Battery Rated Power \(P_B_max\):\s*([\d\.]+)\s*kW/i);
-    const costMatch = logs.match(/Total Annualized Cost \(CAPEX \+ OPEX\):\s*€\s*([\d\.,]+)/i);
+    const costMatch = logs.match(/Total Annualized Cost \(CAPEX \+ OPEX\):\s*[^0-9\r\n]*([\d\.,]+)/i);
     
     const capEl = document.getElementById(`${prefix}-capacity`);
     const powEl = document.getElementById(`${prefix}-power`);
@@ -430,7 +548,97 @@ function getNiceName(key) {
     const mapping = {
         "pv_cleaner": "PV Cleaner",
         "con_cleaner": "Consumption Cleaner",
-        "battery_optimizer": "Battery Optimizer"
+        "battery_optimizer": "Battery Optimizer",
+        "forecast_pv": "Solar PV Forecaster",
+        "forecast_con": "Supermarket Forecaster",
+        "forecast_ev": "Lidl EV Forecaster",
+        "forecast_caltech": "Caltech EV Forecaster",
+        "forecast_all": "Multi-Target Forecaster Engine"
     };
     return mapping[key] || key;
+}
+
+// Switch Forecasting Visualizations Gallery Tabs
+function switchForecastGallery(plotId) {
+    document.querySelectorAll("#forecast-gallery-tabs .gallery-tab").forEach(btn => btn.classList.remove("active"));
+    document.querySelectorAll("#tab-forecasting .gallery-img-container").forEach(c => c.classList.add("hidden"));
+    
+    if (event && event.target) {
+        event.target.classList.add("active");
+    }
+    const targetEl = document.getElementById(`fgallery-${plotId}`);
+    if (targetEl) targetEl.classList.remove("hidden");
+}
+
+// Load and populate Forecast Metrics Table
+async function loadForecastMetrics() {
+    try {
+        const res = await fetch(`${API_BASE}/api/forecast/metrics`);
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        const tbody = document.querySelector("#forecast-metrics-table tbody");
+        if (!tbody) return;
+        
+        if (!data || Object.keys(data).length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color: var(--text-muted); padding: 20px;">No forecast metrics found. Run the forecasters to generate benchmark scorecard.</td></tr>`;
+            return;
+        }
+        
+        let html = "";
+        for (const [key, item] of Object.entries(data)) {
+            const bestM = item.best_model;
+            const stats = item.models[bestM];
+            const r2 = stats.r2;
+            const wape = stats.wape_pct !== undefined ? `${stats.wape_pct.toFixed(1)}%` : "--";
+            const biasVal = stats.energy_bias_pct;
+            const biasText = biasVal !== undefined ? `${biasVal > 0 ? '+' : ''}${biasVal.toFixed(1)}%` : "--";
+            let badgeClass = "badge-sparse";
+            let badgeText = "Sparse / Intermittent";
+            if (r2 >= 0.70) {
+                badgeClass = "badge-high";
+                badgeText = "High Predictability";
+            } else if (r2 >= 0.30) {
+                badgeClass = "badge-mod";
+                badgeText = "Moderate Predictability";
+            }
+            
+            html += `
+                <tr>
+                    <td><strong>${item.target_name}</strong></td>
+                    <td><span style="font-family: monospace; font-weight: bold; color: var(--neon-cyan); background: rgba(6, 182, 212, 0.1); padding: 3px 8px; border-radius: 4px;">${bestM}</span></td>
+                    <td style="font-weight: bold; color: ${r2 >= 0.7 ? '#10b981' : (r2 >= 0.3 ? '#f59e0b' : '#ef4444')};">${r2.toFixed(4)}</td>
+                    <td>${stats.mae.toFixed(2)} ${item.unit}</td>
+                    <td>${stats.rmse.toFixed(2)} ${item.unit}</td>
+                    <td style="font-weight: bold; color: ${stats.wape_pct < 50 ? '#10b981' : (stats.wape_pct < 100 ? '#f59e0b' : '#ef4444')};">${wape}</td>
+                    <td style="color: ${Math.abs(biasVal || 0) < 10 ? '#10b981' : '#f59e0b'}; font-weight: 600;">${biasText}</td>
+                    <td><span class="badge-level ${badgeClass}">${badgeText}</span></td>
+                </tr>
+            `;
+        }
+        tbody.innerHTML = html;
+        
+        // Refresh forecast plot images
+        refreshForecastPlots();
+    } catch (err) {
+        console.error("Failed to load forecast metrics:", err);
+    }
+}
+
+function refreshForecastPlots() {
+    const t = new Date().getTime();
+    const scorecardImg = document.querySelector("#fgallery-scorecard img");
+    if (scorecardImg) scorecardImg.src = `${API_BASE}/api/plots/forecast_scorecard.png?t=${t}`;
+    
+    const pvImg = document.querySelector("#fgallery-pv img");
+    if (pvImg) pvImg.src = `${API_BASE}/api/plots/forecast_pv.png?t=${t}`;
+    
+    const conImg = document.querySelector("#fgallery-con img");
+    if (conImg) conImg.src = `${API_BASE}/api/plots/forecast_con.png?t=${t}`;
+    
+    const evImg = document.querySelector("#fgallery-ev img");
+    if (evImg) evImg.src = `${API_BASE}/api/plots/forecast_ev.png?t=${t}`;
+    
+    const caltechImg = document.querySelector("#fgallery-caltech img");
+    if (caltechImg) caltechImg.src = `${API_BASE}/api/plots/forecast_caltech.png?t=${t}`;
 }

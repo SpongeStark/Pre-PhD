@@ -11,6 +11,8 @@ from pathlib import Path
 SRC_DIR = Path(__file__).parent.resolve()
 ROOT_DIR = SRC_DIR.parent.resolve()
 UI_DIR = SRC_DIR / "web_ui"
+RESULTS_FORECAST_DIR = ROOT_DIR / "results_forecasting"
+RESULTS_FORECAST_DIR.mkdir(parents=True, exist_ok=True)
 
 # Global state to keep track of running scripts
 # Statuses: "idle", "running", "success", "error"
@@ -18,25 +20,39 @@ execution_state = {
     "pv_cleaner": {"status": "idle", "logs": "", "pid": None},
     "con_cleaner": {"status": "idle", "logs": "", "pid": None},
     "battery_optimizer": {"status": "idle", "logs": "", "pid": None},
+    "battery_optimizer_ev": {"status": "idle", "logs": "", "pid": None},
+    "battery_optimizer_caltech": {"status": "idle", "logs": "", "pid": None},
+    "forecast_pv": {"status": "idle", "logs": "", "pid": None},
+    "forecast_con": {"status": "idle", "logs": "", "pid": None},
+    "forecast_ev": {"status": "idle", "logs": "", "pid": None},
+    "forecast_caltech": {"status": "idle", "logs": "", "pid": None},
+    "forecast_all": {"status": "idle", "logs": "", "pid": None},
     "pipeline": {"status": "idle", "logs": "", "current_step": None, "pid": None}
 }
 
 state_lock = threading.Lock()
 
-# Mapping script identifiers to actual files
-SCRIPT_FILES = {
-    "pv_cleaner": SRC_DIR / "data_cleaner.py",
-    "con_cleaner": SRC_DIR / "data_cleaner_con.py",
-    "battery_optimizer": SRC_DIR / "battery_optimizer.py"
+# Mapping script identifiers to command argument lists
+SCRIPT_COMMANDS = {
+    "pv_cleaner": [sys.executable, "-u", str(SRC_DIR / "data_cleaner.py")],
+    "con_cleaner": [sys.executable, "-u", str(SRC_DIR / "data_cleaner_con.py")],
+    "battery_optimizer": [sys.executable, "-u", str(SRC_DIR / "battery_optimizer.py")],
+    "battery_optimizer_ev": [sys.executable, "-u", str(SRC_DIR / "battery_optimizer.py"), "--with-ev"],
+    "battery_optimizer_caltech": [sys.executable, "-u", str(SRC_DIR / "battery_optimizer.py"), "--mode", "caltech_ev"],
+    "forecast_pv": [sys.executable, "-u", str(SRC_DIR / "forecaster_pv.py")],
+    "forecast_con": [sys.executable, "-u", str(SRC_DIR / "forecaster_con.py")],
+    "forecast_ev": [sys.executable, "-u", str(SRC_DIR / "forecaster_ev.py")],
+    "forecast_caltech": [sys.executable, "-u", str(SRC_DIR / "forecaster_caltech.py")],
+    "forecast_all": [sys.executable, "-u", str(SRC_DIR / "forecaster_engine.py"), "--target", "all", "--model", "compare"]
 }
 
 def run_script_thread(script_key, on_complete=None):
     """Executes a single script, capturing logs line-by-line."""
-    script_path = SCRIPT_FILES.get(script_key)
-    if not script_path or not script_path.exists():
+    cmd = SCRIPT_COMMANDS.get(script_key)
+    if not cmd:
         with state_lock:
             execution_state[script_key]["status"] = "error"
-            execution_state[script_key]["logs"] = f"Error: Script not found at {script_path}\n"
+            execution_state[script_key]["logs"] = f"Error: No command defined for {script_key}\n"
         if on_complete:
             on_complete(False)
         return
@@ -47,12 +63,16 @@ def run_script_thread(script_key, on_complete=None):
 
     try:
         # Run with unbuffered python output (-u) in the root directory
+        env = dict(os.environ, PYTHONIOENCODING="utf-8")
         process = subprocess.Popen(
-            [sys.executable, "-u", str(script_path)],
+            cmd,
             cwd=str(ROOT_DIR),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
             bufsize=1
         )
         
@@ -109,14 +129,18 @@ def run_pipeline_thread():
         log_to_pipeline(f"\n[Step {i+1}/{len(steps)}] Running {step}...\n")
         
         # We run the script synchronously within this pipeline thread
-        script_path = SCRIPT_FILES[step]
+        cmd = SCRIPT_COMMANDS[step]
+        env = dict(os.environ, PYTHONIOENCODING="utf-8")
         try:
             process = subprocess.Popen(
-                [sys.executable, "-u", str(script_path)],
+                cmd,
                 cwd=str(ROOT_DIR),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
                 bufsize=1
             )
             
@@ -198,6 +222,22 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                 self.send_error(400, "Invalid script name")
             return
 
+        # --- API: GET Forecast Metrics ---
+        elif path == "/api/forecast/metrics":
+            metrics_file = RESULTS_FORECAST_DIR / "forecast_metrics.json"
+            if metrics_file.exists():
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                with open(metrics_file, "rb") as mf:
+                    self.wfile.write(mf.read())
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({}).encode('utf-8'))
+            return
+
         # --- API: Serve Plots ---
         elif path.startswith("/api/plots/"):
             plot_name = path.replace("/api/plots/", "")
@@ -208,7 +248,14 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
             plot_files = {
                 "data_cleaner_results.png": SRC_DIR / "data_cleaner_results.png",
                 "data_cleaner_con_results.png": SRC_DIR / "data_cleaner_con_results.png",
-                "optimization_results.png": SRC_DIR / "optimization_results.png"
+                "optimization_results.png": SRC_DIR / "optimization_results.png",
+                "optimization_results_ev.png": SRC_DIR / "optimization_results_ev.png",
+                "optimization_results_caltech.png": SRC_DIR / "optimization_results_caltech.png",
+                "forecast_pv.png": RESULTS_FORECAST_DIR / "forecast_pv.png",
+                "forecast_con.png": RESULTS_FORECAST_DIR / "forecast_con.png",
+                "forecast_ev.png": RESULTS_FORECAST_DIR / "forecast_ev.png",
+                "forecast_caltech.png": RESULTS_FORECAST_DIR / "forecast_caltech.png",
+                "forecast_scorecard.png": RESULTS_FORECAST_DIR / "forecast_scorecard.png"
             }
             
             file_path = plot_files.get(plot_name)
@@ -297,7 +344,7 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"message": "Pipeline started"}).encode('utf-8'))
                 
-            elif script in SCRIPT_FILES:
+            elif script in SCRIPT_COMMANDS:
                 # Check if already running
                 with state_lock:
                     is_running = any(execution_state[k]["status"] == "running" for k in execution_state)

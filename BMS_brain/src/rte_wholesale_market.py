@@ -83,6 +83,30 @@ class RTEWholesaleMarketClient:
             logger.error(f"Failed to fetch historical prices for year {year}: {err}")
             return pd.DataFrame()
 
+    def _format_datetime(self, dt):
+        """Formats a datetime object or string to ISO 8601 string for RTE API."""
+        dt_obj = pd.to_datetime(dt)
+        if dt_obj.tzinfo is None:
+            return dt_obj.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        return dt_obj.isoformat()
+
+    def get_access_token(self):
+        """Retrieve an OAuth2 Bearer token from RTE using client credentials flow."""
+        if self._access_token and self._token_expires_at and datetime.now() < self._token_expires_at:
+            return self._access_token
+        url = f"{self.base_url}{self.TOKEN_PATH}"
+        auth_header = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()
+        headers = {
+            "Authorization": f"Basic {auth_header}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        res = requests.post(url, headers=headers, data={"grant_type": "client_credentials"}, timeout=15)
+        res.raise_for_status()
+        data = res.json()
+        self._access_token = data.get("access_token")
+        self._token_expires_at = datetime.now() + timedelta(seconds=data.get("expires_in", 7200) - 60)
+        return self._access_token
+
     def fetch_wholesale_prices(self, start_date, end_date):
         """
         Fetch the wholesale market power exchange prices in France from the RTE API.
@@ -90,10 +114,17 @@ class RTEWholesaleMarketClient:
         it automatically falls back to historical market dataset.
         """
         start_dt = pd.to_datetime(start_date)
-        start_str = self._format_datetime(start_date)
-        end_str = self._format_datetime(end_date)
+        
+        # Check if the requested range is older than 60 days (outside RTE live API retention)
+        now_dt = pd.Timestamp.now()
+        check_dt = start_dt.tz_localize(None) if start_dt.tzinfo else start_dt
+        if (now_dt - check_dt).days > 60:
+            logger.info(f"Requested dates are older than 60 days. Loading historical market dataset for year {start_dt.year}...")
+            return self.fetch_historic_prices_for_year(start_dt.year)
         
         try:
+            start_str = self._format_datetime(start_date)
+            end_str = self._format_datetime(end_date)
             token = self.get_access_token()
             api_url = f"{self.base_url}{self.PRICES_PATH}"
             

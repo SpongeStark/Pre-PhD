@@ -59,6 +59,7 @@
         <div class="tab-controller">
             <button class="tab-btn active" onclick="switchTab('individual')">Single Modules</button>
             <button class="tab-btn" onclick="switchTab('pipeline')">Full Pipeline (Run All)</button>
+            <button class="tab-btn" onclick="switchTab('forecasting')">🔮 Forecasting Studio</button>
         </div>
 
         <!-- MAIN LAYOUT -->
@@ -127,16 +128,21 @@
                             <h3>Battery Optimizer</h3>
                             <span class="status-badge idle">Idle</span>
                         </div>
-                        <p class="card-desc">Solves the MILP sizing problem using PuLP. Integrates French Wholesale Market API price feeds, CSPE taxes, and network TURPE fees to solve optimal size and schedule.</p>
-                        <div class="card-actions">
-                            <button class="btn-primary" onclick="runScript('battery_optimizer')">Run Battery Optimizer</button>
+                        <p class="card-desc">Solves the battery sizing and scheduling optimization using PuLP and real French EPEX Spot wholesale prices. Run with either the Supermarket load or EV Chargers load completely discriminated.</p>
+                        <div class="card-actions card-actions-triple">
+                            <button class="btn-primary" id="btn-run-base" onclick="runScript('battery_optimizer')">Run Supermarket Only</button>
+                            <button class="btn-primary btn-ev" id="btn-run-ev" onclick="runScript('battery_optimizer_ev')">⚡ Run EV Chargers Only</button>
+                            <button class="btn-primary btn-caltech" id="btn-run-caltech" onclick="runScript('battery_optimizer_caltech')">🎓 Run Caltech EV Only</button>
                         </div>
                         <div class="progress-bar-container">
                             <div class="progress-bar"></div>
                         </div>
                         <!-- Sizing Optimization Results -->
                         <div class="optimization-results-panel hidden" id="results-battery_optimizer">
-                            <div class="panel-title">Sizing Solution Details</div>
+                            <div class="panel-header-row">
+                                <div class="panel-title">Sizing Solution Details</div>
+                                <span class="mode-badge" id="card-metric-mode">Supermarket Only</span>
+                            </div>
                             <div class="panel-grid">
                                 <div class="panel-metric">
                                     <span class="p-label">Optimal Capacity</span>
@@ -226,7 +232,9 @@
                         <div class="gallery-tabs">
                             <button class="gallery-tab active" onclick="switchGallery('pv')">PV Clean</button>
                             <button class="gallery-tab" onclick="switchGallery('con')">Consumption Clean</button>
-                            <button class="gallery-tab" onclick="switchGallery('battery')">Sizing Solution</button>
+                            <button class="gallery-tab" onclick="switchGallery('battery')">Sizing (Supermarket Only)</button>
+                            <button class="gallery-tab" onclick="switchGallery('battery_ev')">⚡ Sizing (EV Chargers Only)</button>
+                            <button class="gallery-tab" onclick="switchGallery('battery_caltech')">🎓 Sizing (Caltech EV Only)</button>
                         </div>
                         <div class="gallery-content">
                             <div class="gallery-img-container" id="gallery-pv">
@@ -239,8 +247,117 @@
                             </div>
                             <div class="gallery-img-container hidden" id="gallery-battery">
                                 <img src="" alt="Optimizer Plot" class="gallery-img" onerror="imgError(this)">
-                                <div class="img-placeholder">Plot not generated yet. Run the pipeline to build this chart.</div>
+                                <div class="img-placeholder">Plot not generated yet. Run the optimizer to build this chart.</div>
                             </div>
+                            <div class="gallery-img-container hidden" id="gallery-battery_ev">
+                                <img src="" alt="EV Optimizer Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Run the EV optimizer to build this chart.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="gallery-battery_caltech">
+                                <img src="" alt="Caltech EV Optimizer Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Run the Caltech EV optimizer to build this chart.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- TAB 3: FORECASTING STUDIO -->
+            <section id="tab-forecasting" class="tab-panel">
+                <div class="pipeline-run-box">
+                    <div class="run-header">
+                        <div>
+                            <h2>Microgrid Forecasting Studio</h2>
+                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+                                24-Hour ahead multi-step machine learning forecasting (LightGBM vs. XGBoost) across generation and demand profiles.
+                            </p>
+                        </div>
+                        <button class="btn-large btn-caltech" id="btn-run-all-forecast" onclick="runScript('forecast_all')">
+                            🚀 Run All Forecasters & Compare
+                        </button>
+                    </div>
+
+                    <!-- Action Bar for Individual Targets -->
+                    <div class="forecast-action-bar">
+                        <span class="forecast-bar-label">Individual Asset Forecasters:</span>
+                        <div class="forecast-buttons-row">
+                            <button class="btn-forecast btn-pv" onclick="runScript('forecast_pv')">☀️ Forecast PV</button>
+                            <button class="btn-forecast btn-con" onclick="runScript('forecast_con')">🏢 Forecast Supermarket</button>
+                            <button class="btn-forecast btn-ev" onclick="runScript('forecast_ev')">⚡ Forecast Lidl EV</button>
+                            <button class="btn-forecast btn-caltech" onclick="runScript('forecast_caltech')">🎓 Forecast Caltech EV</button>
+                        </div>
+                    </div>
+
+                    <!-- Metrics Scorecard Table -->
+                    <div class="forecast-scorecard-card">
+                        <div class="scorecard-header-row">
+                            <h3>Predictability & Model Evaluation Scorecard (7-Day Operational Horizon)</h3>
+                            <button class="btn-copy" onclick="loadForecastMetrics()">↻ Refresh Metrics</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="forecast-table" id="forecast-metrics-table">
+                                <thead>
+                                    <tr>
+                                        <th>Asset Target</th>
+                                        <th>Best Model</th>
+                                        <th>R² Score</th>
+                                        <th>MAE</th>
+                                        <th>RMSE</th>
+                                        <th>WAPE (%)</th>
+                                        <th>Energy Bias (%)</th>
+                                        <th>Predictability Level</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="8" style="text-align:center; color: var(--text-muted);">Loading benchmark metrics...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Forecast Plots Gallery -->
+                    <div class="plots-gallery">
+                        <h3>Forecast Visualizations</h3>
+                        <div class="gallery-tabs" id="forecast-gallery-tabs">
+                            <button class="gallery-tab active" onclick="switchForecastGallery('scorecard')">📊 4-Target Scorecard</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('pv')">☀️ Solar PV</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('con')">🏢 Supermarket (CON)</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('ev')">⚡ Lidl Commercial EV</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('caltech')">🎓 Caltech Campus EV</button>
+                        </div>
+                        <div class="gallery-content">
+                            <div class="gallery-img-container" id="fgallery-scorecard">
+                                <img src="/api/plots/forecast_scorecard.png" alt="Forecasting Scorecard" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run All Forecasters' to build this scorecard.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="fgallery-pv">
+                                <img src="/api/plots/forecast_pv.png" alt="PV Forecast Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="fgallery-con">
+                                <img src="/api/plots/forecast_con.png" alt="Supermarket Forecast Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="fgallery-ev">
+                                <img src="/api/plots/forecast_ev.png" alt="Lidl EV Forecast Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="fgallery-caltech">
+                                <img src="/api/plots/forecast_caltech.png" alt="Caltech EV Forecast Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Forecast Log Terminal -->
+                    <div class="pipeline-terminal">
+                        <div class="terminal-header">
+                            <span>Forecasting Execution Logs</span>
+                            <button class="btn-copy" onclick="copyLogs('forecast')">Copy Logs</button>
+                        </div>
+                        <div class="console-log full-height" id="log-forecast">
+                            <pre>Forecasting engine logs will appear here in real time...</pre>
                         </div>
                     </div>
 

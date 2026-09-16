@@ -1,3 +1,5 @@
+import sys
+import argparse
 import pulp
 import pandas as pd
 import numpy as np
@@ -6,26 +8,95 @@ from pathlib import Path
 from rte_wholesale_market import RTEWholesaleMarketClient
 
 # ==========================================
+# 0. ARGUMENT PARSING
+# ==========================================
+parser = argparse.ArgumentParser(description="Battery Sizing & Operation Optimizer")
+parser.add_argument(
+    "--mode",
+    choices=["supermarket", "ev", "caltech_ev"],
+    default="supermarket",
+    help="Optimization target: 'supermarket' (c_gen), 'ev' (Lidl c_ev only), or 'caltech_ev' (Caltech ACN-Data only)"
+)
+parser.add_argument(
+    "--with-ev",
+    action="store_true",
+    default=False,
+    help="Alias to run in EV chargers only mode (--mode ev)"
+)
+args = parser.parse_args()
+mode = "ev" if args.with_ev else args.mode
+
+# ==========================================
 # 1. PARAMETERS & REAL DATA LOADING
 # ==========================================
 
-# Define project root and data paths
 root_proj = Path(__file__).parent.parent
 pv_data_path = root_proj / "data/master_dataset.parquet"
 con_data_path = root_proj / "data/master_dataset_con.parquet"
+ev_data_path = root_proj / "data/master_dataset_ev.parquet"
+caltech_data_path = root_proj / "data/master_dataset_caltech_ev.parquet"
 
-# Load data
-print("Loading real PV and Consumption data...")
-df_pv = pd.read_parquet(pv_data_path)
-df_con = pd.read_parquet(con_data_path)
+if mode == "caltech_ev":
+    print("Loading real PV and Caltech ACN EV Charging data (CALTECH EV ONLY)...")
+    if not caltech_data_path.exists():
+        raise FileNotFoundError(f"Caltech EV dataset not found at {caltech_data_path}")
+    df_pv = pd.read_parquet(pv_data_path)
+    df_caltech = pd.read_parquet(caltech_data_path)
 
-# Filter for the year 2022
-df_pv = df_pv[df_pv['Date'].dt.year == 2022]
-df_con = df_con[df_con['Date'].dt.year == 2022]
+    df_pv = df_pv[df_pv['Date'].dt.year == 2022]
+    df_caltech = df_caltech[df_caltech['Date'].dt.year == 2022]
 
-# Merge the datasets on 'Date' to align them
-df = pd.merge(df_pv, df_con, on='Date', how='inner')
-df = df.sort_values(by='Date').reset_index(drop=True)
+    df = pd.merge(df_pv, df_caltech[['Date', 'c_ev']], on='Date', how='inner')
+    df = df.sort_values(by='Date').reset_index(drop=True)
+
+    df['c_ev'] = df['c_ev'].fillna(0)
+    load_profile = df['c_ev'].values
+
+    print("\n[MODE: CALTECH EV ONLY] Optimizing battery sizing for Caltech EV campus chargers only...")
+    print("--- CALTECH EV DEMAND PROFILE SUMMARY (2022 Projection) ---")
+    print(f"  - Target Profile:   Caltech EV Chargers ({caltech_data_path.name})")
+    print(f"  - Caltech EV Load:  Mean = {df['c_ev'].mean():.2f} kW, Max = {df['c_ev'].max():.2f} kW, Total = {(df['c_ev'].sum() * 0.25):,.1f} kWh")
+
+elif mode == "ev":
+    print("Loading real PV and EV Charging data (EV CHARGERS ONLY)...")
+    if not ev_data_path.exists():
+        raise FileNotFoundError(f"EV dataset not found at {ev_data_path}")
+    df_pv = pd.read_parquet(pv_data_path)
+    df_ev = pd.read_parquet(ev_data_path)
+
+    df_pv = df_pv[df_pv['Date'].dt.year == 2022]
+    df_ev = df_ev[df_ev['Date'].dt.year == 2022]
+
+    df = pd.merge(df_pv, df_ev[['Date', 'c_ev']], on='Date', how='inner')
+    df = df.sort_values(by='Date').reset_index(drop=True)
+
+    df['c_ev'] = df['c_ev'].fillna(0)
+    load_profile = df['c_ev'].values
+
+    print("\n[MODE: EV CHARGERS ONLY] Optimizing battery sizing for EV charging stations only (c_ev)...")
+    print("--- EV DEMAND PROFILE SUMMARY (2022) ---")
+    print(f"  - Target Profile:   EV Chargers Only ({ev_data_path.name})")
+    print(f"  - EV Charging Load: Mean = {df['c_ev'].mean():.2f} kW, Max = {df['c_ev'].max():.2f} kW, Total = {(df['c_ev'].sum() * 0.25):,.1f} kWh")
+else:
+    print("Loading real PV and Supermarket Consumption data (SUPERMARKET ONLY)...")
+    if not con_data_path.exists():
+        raise FileNotFoundError(f"Consumption dataset not found at {con_data_path}")
+    df_pv = pd.read_parquet(pv_data_path)
+    df_con = pd.read_parquet(con_data_path)
+
+    df_pv = df_pv[df_pv['Date'].dt.year == 2022]
+    df_con = df_con[df_con['Date'].dt.year == 2022]
+
+    df = pd.merge(df_pv, df_con[['Date', 'c_gen']], on='Date', how='inner')
+    df = df.sort_values(by='Date').reset_index(drop=True)
+
+    df['c_gen'] = df['c_gen'].fillna(0)
+    load_profile = df['c_gen'].values
+
+    print("\n[MODE: SUPERMARKET BASE ONLY] Optimizing battery sizing for supermarket consumption only (c_gen)...")
+    print("--- SUPERMARKET DEMAND PROFILE SUMMARY (2022) ---")
+    print(f"  - Target Profile:   Supermarket Base ({con_data_path.name})")
+    print(f"  - Supermarket Load: Mean = {df['c_gen'].mean():.2f} kW, Max = {df['c_gen'].max():.2f} kW, Total = {(df['c_gen'].sum() * 0.25):,.1f} kWh")
 
 # Time parameters
 T = len(df) # Full year 2022
@@ -34,7 +105,6 @@ time_steps = range(T)
 
 # Extract Profiles
 pv_profile = df['PV'].fillna(0).values
-load_profile = df['c_gen'].fillna(0).values
 
 # Electricity Tariff (2022 Historic RTE/EPEX Spot Market Prices + Taxes & TURPE)
 print("\nFetching historic 2022 wholesale energy prices (EPEX Spot France)...")
@@ -178,7 +248,14 @@ print("Solving the sizing optimization...")
 model.solve(pulp.PULP_CBC_CMD(msg=0)) # Using PuLP's default open-source CBC solver
 
 if pulp.LpStatus[model.status] == 'Optimal':
-    print("\n--- OPTIMAL HARDWARE SIZING ---")
+    if mode == "caltech_ev":
+        mode_str = "CALTECH EV CHARGERS ONLY"
+    elif mode == "ev":
+        mode_str = "EV CHARGERS ONLY"
+    else:
+        mode_str = "SUPERMARKET ONLY"
+        
+    print(f"\n--- OPTIMAL HARDWARE SIZING [{mode_str}] ---")
     print(f"Battery Capacity (E_B_max): {E_B_max.varValue:.2f} kWh")
     print(f"Battery Rated Power (P_B_max): {P_B_max.varValue:.2f} kW")
     print(f"Total Annualized Cost (CAPEX + OPEX): €{pulp.value(model.objective):.2f}")
@@ -211,11 +288,19 @@ if pulp.LpStatus[model.status] == 'Optimal':
     fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
     
     # Plot 1: Power Balance
-    axes[0].plot(t_axis, res_plot['Load_kW'], label='Load Demand', color='red', linestyle='--')
+    if mode == "caltech_ev":
+        axes[0].plot(t_axis, res_plot['Load_kW'], label='Caltech EV Demand', color='indigo', linestyle='-', linewidth=2)
+        axes[0].set_title('Power Balance: Caltech Campus EV Demand (Only), Solar PV, & Grid Import')
+    elif mode == "ev":
+        axes[0].plot(t_axis, res_plot['Load_kW'], label='EV Charging Demand', color='teal', linestyle='-', linewidth=2)
+        axes[0].set_title('Power Balance: EV Charging Demand (Only), Solar PV, & Grid Import')
+    else:
+        axes[0].plot(t_axis, res_plot['Load_kW'], label='Supermarket Demand', color='red', linestyle='--', linewidth=2)
+        axes[0].set_title('Power Balance: Supermarket Demand (Only), Solar PV, & Grid Import')
+        
     axes[0].plot(t_axis, res_plot['PV_Gen_kW'], label='PV Generation', color='orange')
     axes[0].plot(t_axis, res_plot['P_grid_kW'], label='Grid Import', color='black')
     axes[0].set_ylabel('Power (kW)')
-    axes[0].set_title('Power Balance (Load, PV, Grid Import)')
     axes[0].legend(loc='upper right')
     axes[0].grid(True)
     
@@ -249,7 +334,13 @@ if pulp.LpStatus[model.status] == 'Optimal':
     
     plt.tight_layout()
     # Save the plot to a file in case the environment cannot display it
-    output_plot_path = Path(__file__).parent / "optimization_results.png"
+    if mode == "caltech_ev":
+        plot_filename = "optimization_results_caltech.png"
+    elif mode == "ev":
+        plot_filename = "optimization_results_ev.png"
+    else:
+        plot_filename = "optimization_results.png"
+    output_plot_path = Path(__file__).parent / plot_filename
     plt.savefig(output_plot_path)
     print(f"Optimization plots successfully saved to: {output_plot_path}")
     plt.close()
