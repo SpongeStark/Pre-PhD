@@ -13,6 +13,8 @@ ROOT_DIR = SRC_DIR.parent.resolve()
 UI_DIR = SRC_DIR / "web_ui"
 RESULTS_FORECAST_DIR = ROOT_DIR / "results_forecasting"
 RESULTS_FORECAST_DIR.mkdir(parents=True, exist_ok=True)
+RESULTS_MPC_DIR = ROOT_DIR / "results_mpc"
+RESULTS_MPC_DIR.mkdir(parents=True, exist_ok=True)
 
 # Global state to keep track of running scripts
 # Statuses: "idle", "running", "success", "error"
@@ -27,6 +29,9 @@ execution_state = {
     "forecast_ev": {"status": "idle", "logs": "", "pid": None},
     "forecast_caltech": {"status": "idle", "logs": "", "pid": None},
     "forecast_all": {"status": "idle", "logs": "", "pid": None},
+    "mpc_supermarket": {"status": "idle", "logs": "", "pid": None},
+    "mpc_ev": {"status": "idle", "logs": "", "pid": None},
+    "mpc_caltech": {"status": "idle", "logs": "", "pid": None},
     "pipeline": {"status": "idle", "logs": "", "current_step": None, "pid": None}
 }
 
@@ -43,7 +48,10 @@ SCRIPT_COMMANDS = {
     "forecast_con": [sys.executable, "-u", str(SRC_DIR / "forecaster_con.py")],
     "forecast_ev": [sys.executable, "-u", str(SRC_DIR / "forecaster_ev.py")],
     "forecast_caltech": [sys.executable, "-u", str(SRC_DIR / "forecaster_caltech.py")],
-    "forecast_all": [sys.executable, "-u", str(SRC_DIR / "forecaster_engine.py"), "--target", "all", "--model", "compare"]
+    "forecast_all": [sys.executable, "-u", str(SRC_DIR / "forecaster_engine.py"), "--target", "all", "--model", "compare"],
+    "mpc_supermarket": [sys.executable, "-u", str(SRC_DIR / "mpc_supermarket.py")],
+    "mpc_ev": [sys.executable, "-u", str(SRC_DIR / "mpc_ev.py")],
+    "mpc_caltech": [sys.executable, "-u", str(SRC_DIR / "mpc_caltech.py")]
 }
 
 def run_script_thread(script_key, on_complete=None):
@@ -238,6 +246,35 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({}).encode('utf-8'))
             return
 
+        # --- API: GET MPC Metrics ---
+        elif path == "/api/mpc/metrics":
+            query = urllib.parse.parse_qs(parsed_url.query)
+            mode = query.get("mode", [None])[0]
+            if mode:
+                mf = RESULTS_MPC_DIR / f"mpc_metrics_{mode}.json"
+                if mf.exists():
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    with open(mf, "rb") as f:
+                        self.wfile.write(f.read())
+                    return
+            # Aggregate all modes if none or unrecognized
+            all_metrics = {}
+            for m in ["supermarket", "ev", "caltech_ev"]:
+                mf = RESULTS_MPC_DIR / f"mpc_metrics_{m}.json"
+                if mf.exists():
+                    try:
+                        with open(mf, "r", encoding="utf-8") as f:
+                            all_metrics[m] = json.load(f)
+                    except Exception:
+                        pass
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(all_metrics).encode('utf-8'))
+            return
+
         # --- API: Serve Plots ---
         elif path.startswith("/api/plots/"):
             plot_name = path.replace("/api/plots/", "")
@@ -255,7 +292,10 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                 "forecast_con.png": RESULTS_FORECAST_DIR / "forecast_con.png",
                 "forecast_ev.png": RESULTS_FORECAST_DIR / "forecast_ev.png",
                 "forecast_caltech.png": RESULTS_FORECAST_DIR / "forecast_caltech.png",
-                "forecast_scorecard.png": RESULTS_FORECAST_DIR / "forecast_scorecard.png"
+                "forecast_scorecard.png": RESULTS_FORECAST_DIR / "forecast_scorecard.png",
+                "mpc_schedule_supermarket.png": RESULTS_MPC_DIR / "mpc_schedule_supermarket.png",
+                "mpc_schedule_ev.png": RESULTS_MPC_DIR / "mpc_schedule_ev.png",
+                "mpc_schedule_caltech_ev.png": RESULTS_MPC_DIR / "mpc_schedule_caltech_ev.png"
             }
             
             file_path = plot_files.get(plot_name)

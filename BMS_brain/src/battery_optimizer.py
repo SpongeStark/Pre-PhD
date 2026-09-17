@@ -260,6 +260,29 @@ if pulp.LpStatus[model.status] == 'Optimal':
     print(f"Battery Rated Power (P_B_max): {P_B_max.varValue:.2f} kW")
     print(f"Total Annualized Cost (CAPEX + OPEX): €{pulp.value(model.objective):.2f}")
     
+    # Save/update hardware sizing results JSON for MPC usage
+    sizing_json_path = Path(__file__).parent / "battery_sizing_results.json"
+    import json
+    sizing_dict = {}
+    if sizing_json_path.exists():
+        try:
+            with open(sizing_json_path, 'r', encoding='utf-8') as f:
+                sizing_dict = json.load(f)
+        except Exception:
+            sizing_dict = {}
+    sizing_dict[mode] = {
+        "name": mode_str,
+        "E_B_max": round(float(E_B_max.varValue), 2),
+        "P_B_max": round(float(P_B_max.varValue), 2),
+        "c_rate": float(c_rate),
+        "annualized_cost_eur": round(float(pulp.value(model.objective)), 2),
+        "status": str(pulp.LpStatus[model.status]),
+        "updated_at": str(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
+    }
+    with open(sizing_json_path, 'w', encoding='utf-8') as f:
+        json.dump(sizing_dict, f, indent=2)
+    print(f"Saved sizing output for MPC to {sizing_json_path.name}")
+    
     # Extract timeseries results into a DataFrame for easy plotting later
     results = pd.DataFrame({
         'PV_Gen_kW': pv_profile,

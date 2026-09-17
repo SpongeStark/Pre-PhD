@@ -9,6 +9,8 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSystemStatus();
     // Load initial forecast metrics
     loadForecastMetrics();
+    // Load initial MPC metrics
+    loadMPCMetrics();
     // Start continuous status updates every 2 seconds
     setInterval(updateSystemStatus, 2000);
 });
@@ -238,6 +240,50 @@ function updateCards(state, previousState = {}) {
         }
     }
 
+    // 3. MPC Operational Optimizers
+    const mpcConfigs = [
+        { key: "mpc_supermarket", cardId: "mpc-card-supermarket", btnClass: ".btn-mpc-supermarket", defaultText: "🏢 Run Supermarket MPC", runningText: "Executing Supermarket MPC..." },
+        { key: "mpc_ev", cardId: "mpc-card-ev", btnClass: ".btn-mpc-ev", defaultText: "⚡ Run Lidl EV MPC", runningText: "Executing Lidl EV MPC..." },
+        { key: "mpc_caltech", cardId: "mpc-card-caltech", btnClass: ".btn-mpc-caltech", defaultText: "🎓 Run Caltech Campus MPC", runningText: "Executing Caltech MPC..." }
+    ];
+
+    mpcConfigs.forEach(cfg => {
+        const card = document.getElementById(cfg.cardId);
+        const btn = document.querySelector(cfg.btnClass);
+        const currentStatus = state[cfg.key]?.status || "idle";
+
+        if (card) {
+            const badge = card.querySelector(".status-badge");
+            if (badge) {
+                badge.className = `status-badge ${currentStatus}`;
+                badge.textContent = currentStatus === "success" ? "Optimal" : currentStatus;
+            }
+            if (currentStatus === "running") {
+                card.classList.add("running");
+                card.classList.remove("success", "error");
+            } else if (currentStatus === "success") {
+                card.classList.add("success");
+                card.classList.remove("running", "error");
+            } else if (currentStatus === "error") {
+                card.classList.add("error");
+                card.classList.remove("running", "success");
+            } else {
+                card.classList.remove("running", "success", "error");
+            }
+        }
+
+        if (btn) {
+            if (currentStatus === "running") {
+                btn.disabled = true;
+                btn.textContent = cfg.runningText;
+                startLogPolling(cfg.key);
+            } else {
+                btn.disabled = false;
+                btn.textContent = cfg.defaultText;
+            }
+        }
+    });
+
     // Pipeline Specific Updates
     const pState = state["pipeline"];
     const prevPState = previousState["pipeline"];
@@ -329,6 +375,8 @@ function startLogPolling(scriptKey) {
         targetBoxId = "log-battery_optimizer";
     } else if (scriptKey.startsWith("forecast_")) {
         targetBoxId = "log-forecast";
+    } else if (scriptKey.startsWith("mpc_")) {
+        targetBoxId = "log-mpc";
     }
     
     const pollFunc = async () => {
@@ -351,6 +399,10 @@ function startLogPolling(scriptKey) {
                 updateSystemStatus(); // refresh status immediately
                 if (scriptKey.startsWith("forecast_")) {
                     loadForecastMetrics();
+                }
+                if (scriptKey.startsWith("mpc_")) {
+                    loadMPCMetrics();
+                    refreshMPCPlots();
                 }
             }
         } catch (err) {
@@ -391,11 +443,13 @@ async function runScript(scriptKey) {
             targetBoxId = "log-battery_optimizer";
         } else if (scriptKey.startsWith("forecast_")) {
             targetBoxId = "log-forecast";
+        } else if (scriptKey.startsWith("mpc_")) {
+            targetBoxId = "log-mpc";
         }
             
         // Collapse other logs and expand the current one
         document.querySelectorAll(".console-log").forEach(box => {
-            if (box.id !== targetBoxId && box.id !== "log-pipeline" && box.id !== "log-forecast") {
+            if (box.id !== targetBoxId && box.id !== "log-pipeline" && box.id !== "log-forecast" && box.id !== "log-mpc") {
                 box.classList.add("collapsed");
                 if (box.previousElementSibling) box.previousElementSibling.classList.add("collapsed");
             }
@@ -553,7 +607,10 @@ function getNiceName(key) {
         "forecast_con": "Supermarket Forecaster",
         "forecast_ev": "Lidl EV Forecaster",
         "forecast_caltech": "Caltech EV Forecaster",
-        "forecast_all": "Multi-Target Forecaster Engine"
+        "forecast_all": "Multi-Target Forecaster Engine",
+        "mpc_supermarket": "Supermarket MPC Optimizer",
+        "mpc_ev": "Lidl EV MPC Optimizer",
+        "mpc_caltech": "Caltech EV MPC Optimizer"
     };
     return mapping[key] || key;
 }
@@ -641,4 +698,106 @@ function refreshForecastPlots() {
     
     const caltechImg = document.querySelector("#fgallery-caltech img");
     if (caltechImg) caltechImg.src = `${API_BASE}/api/plots/forecast_caltech.png?t=${t}`;
+}
+
+// Switch MPC Visualizations Gallery Tabs
+function switchMPCGallery(plotId) {
+    document.querySelectorAll("#mpc-gallery-tabs .gallery-tab").forEach(btn => btn.classList.remove("active"));
+    document.querySelectorAll("#tab-mpc .gallery-img-container").forEach(c => c.classList.add("hidden"));
+    
+    if (event && event.target) {
+        event.target.classList.add("active");
+    }
+    const targetEl = document.getElementById(`mpcgallery-${plotId}`);
+    if (targetEl) targetEl.classList.remove("hidden");
+}
+
+// Load and populate MPC Metrics Cards
+async function loadMPCMetrics() {
+    try {
+        const res = await fetch(`${API_BASE}/api/mpc/metrics`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || Object.keys(data).length === 0) return;
+
+        // Supermarket
+        if (data.supermarket) {
+            const sm = data.supermarket;
+            const sz = sm.sizing;
+            const su = sm.summary;
+            const ms = sm.mismatch_stats;
+            const szEl = document.getElementById("mpc-supermarket-sizing");
+            const geEl = document.getElementById("mpc-supermarket-grid-energy");
+            const gcEl = document.getElementById("mpc-supermarket-grid-cost");
+            const dcEl = document.getElementById("mpc-supermarket-deg-cost");
+            const erEl = document.getElementById("mpc-supermarket-error");
+            const csEl = document.getElementById("mpc-supermarket-cases");
+
+            if (szEl && sz) szEl.textContent = `${sz.E_B_max.toFixed(2)} kWh / ${sz.P_B_max.toFixed(2)} kW`;
+            if (geEl && su) geEl.textContent = `${su.grid_energy_imported_kwh.toFixed(2)} kWh`;
+            if (gcEl && su) gcEl.textContent = `EUR ${su.total_grid_cost_eur.toFixed(2)}`;
+            if (dcEl && su) dcEl.textContent = `EUR ${su.total_battery_degradation_cost_eur.toFixed(4)}`;
+            if (erEl && ms) erEl.textContent = `${ms.mean_p_error_kw > 0 ? '+' : ''}${ms.mean_p_error_kw.toFixed(2)} kW`;
+            if (csEl && ms) csEl.textContent = `${ms.surplus_intervals} Surplus / ${ms.deficit_intervals} Deficit`;
+        }
+
+        // Lidl EV
+        if (data.ev) {
+            const ev = data.ev;
+            const sz = ev.sizing;
+            const su = ev.summary;
+            const ms = ev.mismatch_stats;
+            const szEl = document.getElementById("mpc-ev-sizing");
+            const geEl = document.getElementById("mpc-ev-grid-energy");
+            const gcEl = document.getElementById("mpc-ev-grid-cost");
+            const dcEl = document.getElementById("mpc-ev-deg-cost");
+            const erEl = document.getElementById("mpc-ev-error");
+            const csEl = document.getElementById("mpc-ev-cases");
+
+            if (szEl && sz) szEl.textContent = `${sz.E_B_max.toFixed(2)} kWh / ${sz.P_B_max.toFixed(2)} kW`;
+            if (geEl && su) geEl.textContent = `${su.grid_energy_imported_kwh.toFixed(2)} kWh`;
+            if (gcEl && su) gcEl.textContent = `EUR ${su.total_grid_cost_eur.toFixed(2)}`;
+            if (dcEl && su) dcEl.textContent = `EUR ${su.total_battery_degradation_cost_eur.toFixed(4)}`;
+            if (erEl && ms) erEl.textContent = `${ms.mean_p_error_kw > 0 ? '+' : ''}${ms.mean_p_error_kw.toFixed(2)} kW`;
+            if (csEl && ms) csEl.textContent = `${ms.surplus_intervals} Surplus / ${ms.deficit_intervals} Deficit`;
+        }
+
+        // Caltech EV
+        if (data.caltech_ev) {
+            const ce = data.caltech_ev;
+            const sz = ce.sizing;
+            const su = ce.summary;
+            const ms = ce.mismatch_stats;
+            const szEl = document.getElementById("mpc-caltech-sizing");
+            const geEl = document.getElementById("mpc-caltech-grid-energy");
+            const gcEl = document.getElementById("mpc-caltech-grid-cost");
+            const dcEl = document.getElementById("mpc-caltech-deg-cost");
+            const erEl = document.getElementById("mpc-caltech-error");
+            const csEl = document.getElementById("mpc-caltech-cases");
+
+            if (szEl && sz) szEl.textContent = `${sz.E_B_max.toFixed(2)} kWh / ${sz.P_B_max.toFixed(2)} kW`;
+            if (geEl && su) geEl.textContent = `${su.grid_energy_imported_kwh.toFixed(2)} kWh`;
+            if (gcEl && su) gcEl.textContent = `EUR ${su.total_grid_cost_eur.toFixed(2)}`;
+            if (dcEl && su) dcEl.textContent = `EUR ${su.total_battery_degradation_cost_eur.toFixed(4)}`;
+            if (erEl && ms) erEl.textContent = `${ms.mean_p_error_kw > 0 ? '+' : ''}${ms.mean_p_error_kw.toFixed(2)} kW`;
+            if (csEl && ms) csEl.textContent = `${ms.surplus_intervals} Surplus / ${ms.deficit_intervals} Deficit`;
+        }
+
+        // Refresh plots
+        refreshMPCPlots();
+    } catch (err) {
+        console.error("Failed to load MPC metrics:", err);
+    }
+}
+
+function refreshMPCPlots() {
+    const t = new Date().getTime();
+    const smImg = document.querySelector("#mpcgallery-supermarket img");
+    if (smImg) smImg.src = `${API_BASE}/api/plots/mpc_schedule_supermarket.png?t=${t}`;
+    
+    const evImg = document.querySelector("#mpcgallery-ev img");
+    if (evImg) evImg.src = `${API_BASE}/api/plots/mpc_schedule_ev.png?t=${t}`;
+    
+    const caltechImg = document.querySelector("#mpcgallery-caltech img");
+    if (caltechImg) caltechImg.src = `${API_BASE}/api/plots/mpc_schedule_caltech_ev.png?t=${t}`;
 }

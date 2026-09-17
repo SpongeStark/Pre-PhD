@@ -1080,6 +1080,127 @@ body {
     border: 1px solid rgba(239, 68, 68, 0.4);
 }
 
+/* MPC CONTROLLER TAB STYLES */
+.btn-mpc {
+    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-mpc:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.4);
+    filter: brightness(1.1);
+}
+
+.btn-mpc-supermarket {
+    background: linear-gradient(135deg, #ef4444, #f97316);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+.btn-mpc-supermarket:hover {
+    box-shadow: 0 6px 18px rgba(239, 68, 68, 0.4);
+}
+
+.btn-mpc-ev {
+    background: linear-gradient(135deg, #10b981, #06b6d4);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+.btn-mpc-ev:hover {
+    box-shadow: 0 6px 18px rgba(16, 185, 129, 0.4);
+}
+
+.btn-mpc-caltech {
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+.btn-mpc-caltech:hover {
+    box-shadow: 0 6px 18px rgba(99, 102, 241, 0.4);
+}
+
+.mpc-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-top: 16px;
+}
+
+@media (max-width: 1024px) {
+    .mpc-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.mpc-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.mpc-card:hover {
+    border-color: var(--neon-cyan);
+    box-shadow: 0 8px 24px rgba(6, 182, 212, 0.12);
+    transform: translateY(-2px);
+}
+
+.mpc-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+}
+
+.mpc-card-header h4 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.mpc-stat-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 0.85rem;
+}
+
+.mpc-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px dashed hsla(224, 15%, 20%, 0.4);
+}
+
+.mpc-stat-label {
+    color: var(--text-muted);
+}
+
+.mpc-stat-val {
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--neon-cyan);
+}
+
+.mpc-stat-val.val-green { color: #10b981; }
+.mpc-stat-val.val-red { color: #ef4444; }
+.mpc-stat-val.val-amber { color: #f59e0b; }
+
 /* FOOTER */
 .app-footer {
     text-align: center;

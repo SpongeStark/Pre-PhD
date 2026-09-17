@@ -60,6 +60,7 @@
             <button class="tab-btn active" onclick="switchTab('individual')">Single Modules</button>
             <button class="tab-btn" onclick="switchTab('pipeline')">Full Pipeline (Run All)</button>
             <button class="tab-btn" onclick="switchTab('forecasting')">🔮 Forecasting Studio</button>
+            <button class="tab-btn" onclick="switchTab('mpc')">🎯 MPC Controller</button>
         </div>
 
         <!-- MAIN LAYOUT -->
@@ -358,6 +359,172 @@
                         </div>
                         <div class="console-log full-height" id="log-forecast">
                             <pre>Forecasting engine logs will appear here in real time...</pre>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- TAB 4: MPC CONTROLLER -->
+            <section id="tab-mpc" class="tab-panel">
+                <div class="pipeline-run-box">
+                    <div class="run-header">
+                        <div>
+                            <h2>Non-Linear Model Predictive Control (MPC)</h2>
+                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+                                24-Hour lookahead operational dispatch (IPOPT NLP) incorporating dynamic calendar (C_SoC) & 4th-degree cyclic (C_DoD) degradation wear models and real-time forecast error compensation.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Action Bar for Individual MPC Instances -->
+                    <div class="forecast-action-bar">
+                        <span class="forecast-bar-label">Execute Operational MPC:</span>
+                        <div class="forecast-buttons-row">
+                            <button class="btn-mpc btn-mpc-supermarket" onclick="runScript('mpc_supermarket')">🏢 Run Supermarket MPC</button>
+                            <button class="btn-mpc btn-mpc-ev" onclick="runScript('mpc_ev')">⚡ Run Lidl EV MPC</button>
+                            <button class="btn-mpc btn-mpc-caltech" onclick="runScript('mpc_caltech')">🎓 Run Caltech Campus MPC</button>
+                            <button class="btn-copy" style="margin-left: auto;" onclick="loadMPCMetrics()">↻ Refresh Metrics</button>
+                        </div>
+                    </div>
+
+                    <!-- 3 Discriminated Microgrid Assets Overview Grid -->
+                    <div class="mpc-grid" id="mpc-summary-cards">
+                        <!-- Card 1: Supermarket -->
+                        <div class="mpc-card" id="mpc-card-supermarket">
+                            <div class="mpc-card-header">
+                                <h4>🏢 Supermarket Facility</h4>
+                                <span class="status-badge idle">Loaded</span>
+                            </div>
+                            <div class="mpc-stat-list">
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Installed Sizing:</span>
+                                    <span class="mpc-stat-val" id="mpc-supermarket-sizing">264.46 kWh / 69.31 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">24h Grid Energy:</span>
+                                    <span class="mpc-stat-val" id="mpc-supermarket-grid-energy">479.64 kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">24h Grid Cost:</span>
+                                    <span class="mpc-stat-val val-amber" id="mpc-supermarket-grid-cost">EUR 41.39</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Battery Degradation:</span>
+                                    <span class="mpc-stat-val val-red" id="mpc-supermarket-deg-cost">EUR 12.1144</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Mean P_Error:</span>
+                                    <span class="mpc-stat-val val-green" id="mpc-supermarket-error">+7.67 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Real-Time Cases:</span>
+                                    <span class="mpc-stat-val" id="mpc-supermarket-cases" style="font-size: 0.75rem;">74 Surplus / 22 Deficit</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 2: Lidl EV -->
+                        <div class="mpc-card" id="mpc-card-ev">
+                            <div class="mpc-card-header">
+                                <h4>⚡ Lidl Commercial EV</h4>
+                                <span class="status-badge idle">Loaded</span>
+                            </div>
+                            <div class="mpc-stat-list">
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Installed Sizing:</span>
+                                    <span class="mpc-stat-val" id="mpc-ev-sizing">1.29 kWh / 0.65 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">24h Grid Energy:</span>
+                                    <span class="mpc-stat-val" id="mpc-ev-grid-energy">25.34 kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">24h Grid Cost:</span>
+                                    <span class="mpc-stat-val val-amber" id="mpc-ev-grid-cost">EUR 3.06</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Battery Degradation:</span>
+                                    <span class="mpc-stat-val val-red" id="mpc-ev-deg-cost">EUR 0.0563</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Mean P_Error:</span>
+                                    <span class="mpc-stat-val val-green" id="mpc-ev-error">+0.18 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Real-Time Cases:</span>
+                                    <span class="mpc-stat-val" id="mpc-ev-cases" style="font-size: 0.75rem;">59 Surplus / 37 Deficit</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 3: Caltech EV -->
+                        <div class="mpc-card" id="mpc-card-caltech">
+                            <div class="mpc-card-header">
+                                <h4>🎓 Caltech Campus Fleet</h4>
+                                <span class="status-badge idle">Loaded</span>
+                            </div>
+                            <div class="mpc-stat-list">
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Installed Sizing:</span>
+                                    <span class="mpc-stat-val" id="mpc-caltech-sizing">31.36 kWh / 14.07 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">24h Grid Energy:</span>
+                                    <span class="mpc-stat-val" id="mpc-caltech-grid-energy">43.32 kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">24h Grid Cost:</span>
+                                    <span class="mpc-stat-val val-amber" id="mpc-caltech-grid-cost">EUR 3.85</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Battery Degradation:</span>
+                                    <span class="mpc-stat-val val-red" id="mpc-caltech-deg-cost">EUR 1.8242</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Mean P_Error:</span>
+                                    <span class="mpc-stat-val val-green" id="mpc-caltech-error">-5.64 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Real-Time Cases:</span>
+                                    <span class="mpc-stat-val" id="mpc-caltech-cases" style="font-size: 0.75rem;">45 Surplus / 51 Deficit</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MPC Visualizations Gallery -->
+                    <div class="plots-gallery">
+                        <h3>MPC Dispatch & Real-Time Forecast Mismatch Schedules</h3>
+                        <div class="gallery-tabs" id="mpc-gallery-tabs">
+                            <button class="gallery-tab active" onclick="switchMPCGallery('supermarket')">🏢 Supermarket Schedule</button>
+                            <button class="gallery-tab" onclick="switchMPCGallery('ev')">⚡ Lidl EV Schedule</button>
+                            <button class="gallery-tab" onclick="switchMPCGallery('caltech')">🎓 Caltech Campus Schedule</button>
+                        </div>
+                        <div class="gallery-content">
+                            <div class="gallery-img-container" id="mpcgallery-supermarket">
+                                <img src="/api/plots/mpc_schedule_supermarket.png" alt="Supermarket MPC Schedule" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Supermarket MPC'.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="mpcgallery-ev">
+                                <img src="/api/plots/mpc_schedule_ev.png" alt="Lidl EV MPC Schedule" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Lidl EV MPC'.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="mpcgallery-caltech">
+                                <img src="/api/plots/mpc_schedule_caltech_ev.png" alt="Caltech EV MPC Schedule" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Caltech Campus MPC'.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MPC Log Terminal -->
+                    <div class="pipeline-terminal">
+                        <div class="terminal-header">
+                            <span>MPC Execution & IPOPT Solver Logs</span>
+                            <button class="btn-copy" onclick="copyLogs('mpc')">Copy Logs</button>
+                        </div>
+                        <div class="console-log full-height" id="log-mpc">
+                            <pre>MPC optimizer logs and solver progress will appear here in real time...</pre>
                         </div>
                     </div>
 
