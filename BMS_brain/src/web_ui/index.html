@@ -61,6 +61,7 @@
             <button class="tab-btn" onclick="switchTab('pipeline')">Full Pipeline (Run All)</button>
             <button class="tab-btn" onclick="switchTab('forecasting')">🔮 Forecasting Studio</button>
             <button class="tab-btn" onclick="switchTab('mpc')">🎯 MPC Controller</button>
+            <button class="tab-btn" onclick="switchTab('rt')">⚡ Real-Time Controller</button>
         </div>
 
         <!-- MAIN LAYOUT -->
@@ -531,7 +532,184 @@
                 </div>
             </section>
 
-        </main>
+            <!-- TAB 5: REAL-TIME CONTROLLER -->
+            <section id="tab-rt" class="tab-panel">
+                <div class="pipeline-run-box">
+                    <div class="run-header">
+                        <div>
+                            <h2>⚡ 2-Day Real-Time Secondary Microgrid Controller</h2>
+                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+                                48-Hour closed-loop operational compensation (192 intervals, Deadband &plusmn;0.5 kW, 3-state history filtering, anti-chattering persistence, physical headroom allocation, inverter ramp limiting). Strict zero grid re-injection ($P^{grid} \ge 0$) and perfect DC bus balance.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Action Bar for Individual RT Instances -->
+                    <div class="forecast-action-bar">
+                        <span class="forecast-bar-label">Execute Real-Time Controller:</span>
+                        <div class="forecast-buttons-row">
+                            <button class="btn-mpc btn-rt-supermarket" onclick="runScript('rt_supermarket')">🏢 Run Supermarket RT</button>
+                            <button class="btn-mpc btn-rt-ev" onclick="runScript('rt_ev')">⚡ Run Lidl EV RT</button>
+                            <button class="btn-mpc btn-rt-caltech" onclick="runScript('rt_caltech')">🎓 Run Caltech Campus RT</button>
+                            <button class="btn-primary" onclick="runScript('rt_all')" style="margin-left: 6px;">🚀 Run All RT</button>
+                            <button class="btn-copy" style="margin-left: auto;" onclick="loadRTMetrics()">↻ Refresh Metrics</button>
+                        </div>
+                    </div>
+
+                    <!-- 3 Discriminated Microgrid Assets RT Overview Grid -->
+                    <div class="mpc-grid" id="rt-summary-cards">
+                        <!-- Card 1: Supermarket -->
+                        <div class="mpc-card" id="rt-card-supermarket">
+                            <div class="mpc-card-header">
+                                <h4>🏢 Supermarket Facility</h4>
+                                <span class="status-badge idle">Loaded</span>
+                            </div>
+                            <div class="mpc-stat-list">
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Installed Sizing:</span>
+                                    <span class="mpc-stat-val" id="rt-supermarket-sizing">264.46 kWh / 69.31 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">2-Day Grid Cost:</span>
+                                    <span class="mpc-stat-val val-amber" id="rt-supermarket-grid-cost">EUR 138.33</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">MPC Planned Cost:</span>
+                                    <span class="mpc-stat-val" id="rt-supermarket-mpc-cost" style="color: var(--text-muted);">EUR 126.68</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Battery Degradation:</span>
+                                    <span class="mpc-stat-val val-red" id="rt-supermarket-deg-cost">EUR 19.7314</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">PV Curtailed:</span>
+                                    <span class="mpc-stat-val" id="rt-supermarket-curt">95.40 kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">DC Bus Balance:</span>
+                                    <span class="mpc-stat-val val-green" id="rt-supermarket-balance">0.000000 kW [PASSED]</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Interval Cases:</span>
+                                    <span class="mpc-stat-val" id="rt-supermarket-cases" style="font-size: 0.72rem;">48 Def / 135 Sur / 9 Deadband</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 2: Lidl EV -->
+                        <div class="mpc-card" id="rt-card-ev">
+                            <div class="mpc-card-header">
+                                <h4>⚡ Lidl Commercial EV</h4>
+                                <span class="status-badge idle">Loaded</span>
+                            </div>
+                            <div class="mpc-stat-list">
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Installed Sizing:</span>
+                                    <span class="mpc-stat-val" id="rt-ev-sizing">1.29 kWh / 0.65 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">2-Day Grid Cost:</span>
+                                    <span class="mpc-stat-val val-amber" id="rt-ev-grid-cost">EUR 4.71</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">MPC Planned Cost:</span>
+                                    <span class="mpc-stat-val" id="rt-ev-mpc-cost" style="color: var(--text-muted);">EUR 7.28</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Battery Degradation:</span>
+                                    <span class="mpc-stat-val val-red" id="rt-ev-deg-cost">EUR 0.2689</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">PV Curtailed:</span>
+                                    <span class="mpc-stat-val" id="rt-ev-curt">454.54 kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">DC Bus Balance:</span>
+                                    <span class="mpc-stat-val val-green" id="rt-ev-balance">0.000000 kW [PASSED]</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Interval Cases:</span>
+                                    <span class="mpc-stat-val" id="rt-ev-cases" style="font-size: 0.72rem;">85 Def / 78 Sur / 29 Deadband</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 3: Caltech EV -->
+                        <div class="mpc-card" id="rt-card-caltech">
+                            <div class="mpc-card-header">
+                                <h4>🎓 Caltech Campus Fleet</h4>
+                                <span class="status-badge idle">Loaded</span>
+                            </div>
+                            <div class="mpc-stat-list">
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Installed Sizing:</span>
+                                    <span class="mpc-stat-val" id="rt-caltech-sizing">31.36 kWh / 14.07 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">2-Day Grid Cost:</span>
+                                    <span class="mpc-stat-val val-amber" id="rt-caltech-grid-cost">EUR 24.30</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">MPC Planned Cost:</span>
+                                    <span class="mpc-stat-val" id="rt-caltech-mpc-cost" style="color: var(--text-muted);">EUR 9.22</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Battery Degradation:</span>
+                                    <span class="mpc-stat-val val-red" id="rt-caltech-deg-cost">EUR 5.2075</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">PV Curtailed:</span>
+                                    <span class="mpc-stat-val" id="rt-caltech-curt">134.46 kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">DC Bus Balance:</span>
+                                    <span class="mpc-stat-val val-green" id="rt-caltech-balance">0.000000 kW [PASSED]</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Interval Cases:</span>
+                                    <span class="mpc-stat-val" id="rt-caltech-cases" style="font-size: 0.72rem;">84 Def / 95 Sur / 13 Deadband</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RT Visualizations Gallery -->
+                    <div class="plots-gallery">
+                        <h3>2-Day Real-Time Closed-Loop Schedules & DC Bus Balance (5-Panel Analysis)</h3>
+                        <div class="gallery-tabs" id="rt-gallery-tabs">
+                            <button class="gallery-tab active" onclick="switchRTGallery('supermarket')">🏢 Supermarket 2-Day RT</button>
+                            <button class="gallery-tab" onclick="switchRTGallery('ev')">⚡ Lidl EV 2-Day RT</button>
+                            <button class="gallery-tab" onclick="switchRTGallery('caltech')">🎓 Caltech Campus 2-Day RT</button>
+                        </div>
+                        <div class="gallery-content">
+                            <div class="gallery-img-container" id="rtgallery-supermarket">
+                                <img src="/api/plots/rt_schedule_supermarket.png" alt="Supermarket RT Schedule" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Supermarket RT'.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="rtgallery-ev">
+                                <img src="/api/plots/rt_schedule_ev.png" alt="Lidl EV RT Schedule" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Lidl EV RT'.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="rtgallery-caltech">
+                                <img src="/api/plots/rt_schedule_caltech_ev.png" alt="Caltech EV RT Schedule" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Caltech Campus RT'.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RT Log Terminal -->
+                    <div class="pipeline-terminal">
+                        <div class="terminal-header">
+                            <span>Real-Time Controller Simulation Logs</span>
+                            <button class="btn-copy" onclick="copyLogs('rt')">Copy Logs</button>
+                        </div>
+                        <div class="console-log full-height" id="log-rt">
+                            <pre>Real-time controller compensation logs will appear here in real time...</pre>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
         
         <footer class="app-footer">
             <p>Antigravity Powered Battery Management & Optimization System | French Electricity Market (RTE API) Integration</p>

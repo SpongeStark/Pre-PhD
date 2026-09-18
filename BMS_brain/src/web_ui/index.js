@@ -11,6 +11,8 @@ document.addEventListener("DOMContentLoaded", () => {
     loadForecastMetrics();
     // Load initial MPC metrics
     loadMPCMetrics();
+    // Load initial RT metrics
+    loadRTMetrics();
     // Start continuous status updates every 2 seconds
     setInterval(updateSystemStatus, 2000);
 });
@@ -284,6 +286,50 @@ function updateCards(state, previousState = {}) {
         }
     });
 
+    // 4. Real-Time Secondary Controller (Supermarket, Lidl EV, Caltech EV)
+    const rtConfigs = [
+        { key: "rt_supermarket", cardId: "rt-card-supermarket", btnClass: ".btn-rt-supermarket", defaultText: "🏢 Run Supermarket RT", runningText: "Compensating Supermarket..." },
+        { key: "rt_ev", cardId: "rt-card-ev", btnClass: ".btn-rt-ev", defaultText: "⚡ Run Lidl EV RT", runningText: "Compensating Lidl EV..." },
+        { key: "rt_caltech", cardId: "rt-card-caltech", btnClass: ".btn-rt-caltech", defaultText: "🎓 Run Caltech Campus RT", runningText: "Compensating Caltech..." }
+    ];
+
+    rtConfigs.forEach(cfg => {
+        const card = document.getElementById(cfg.cardId);
+        const btn = document.querySelector(cfg.btnClass);
+        const currentStatus = state[cfg.key]?.status || "idle";
+
+        if (card) {
+            const badge = card.querySelector(".status-badge");
+            if (badge) {
+                badge.className = `status-badge ${currentStatus}`;
+                badge.textContent = currentStatus === "success" ? "Optimal [Passed]" : currentStatus;
+            }
+            if (currentStatus === "running") {
+                card.classList.add("running");
+                card.classList.remove("success", "error");
+            } else if (currentStatus === "success") {
+                card.classList.add("success");
+                card.classList.remove("running", "error");
+            } else if (currentStatus === "error") {
+                card.classList.add("error");
+                card.classList.remove("running", "success");
+            } else {
+                card.classList.remove("running", "success", "error");
+            }
+        }
+
+        if (btn) {
+            if (currentStatus === "running") {
+                btn.disabled = true;
+                btn.textContent = cfg.runningText;
+                startLogPolling(cfg.key);
+            } else {
+                btn.disabled = false;
+                btn.textContent = cfg.defaultText;
+            }
+        }
+    });
+
     // Pipeline Specific Updates
     const pState = state["pipeline"];
     const prevPState = previousState["pipeline"];
@@ -377,6 +423,8 @@ function startLogPolling(scriptKey) {
         targetBoxId = "log-forecast";
     } else if (scriptKey.startsWith("mpc_")) {
         targetBoxId = "log-mpc";
+    } else if (scriptKey.startsWith("rt_")) {
+        targetBoxId = "log-rt";
     }
     
     const pollFunc = async () => {
@@ -403,6 +451,10 @@ function startLogPolling(scriptKey) {
                 if (scriptKey.startsWith("mpc_")) {
                     loadMPCMetrics();
                     refreshMPCPlots();
+                }
+                if (scriptKey.startsWith("rt_")) {
+                    loadRTMetrics();
+                    refreshRTPlots();
                 }
             }
         } catch (err) {
@@ -445,11 +497,13 @@ async function runScript(scriptKey) {
             targetBoxId = "log-forecast";
         } else if (scriptKey.startsWith("mpc_")) {
             targetBoxId = "log-mpc";
+        } else if (scriptKey.startsWith("rt_")) {
+            targetBoxId = "log-rt";
         }
             
         // Collapse other logs and expand the current one
         document.querySelectorAll(".console-log").forEach(box => {
-            if (box.id !== targetBoxId && box.id !== "log-pipeline" && box.id !== "log-forecast" && box.id !== "log-mpc") {
+            if (box.id !== targetBoxId && box.id !== "log-pipeline" && box.id !== "log-forecast" && box.id !== "log-mpc" && box.id !== "log-rt") {
                 box.classList.add("collapsed");
                 if (box.previousElementSibling) box.previousElementSibling.classList.add("collapsed");
             }
@@ -610,7 +664,11 @@ function getNiceName(key) {
         "forecast_all": "Multi-Target Forecaster Engine",
         "mpc_supermarket": "Supermarket MPC Optimizer",
         "mpc_ev": "Lidl EV MPC Optimizer",
-        "mpc_caltech": "Caltech EV MPC Optimizer"
+        "mpc_caltech": "Caltech EV MPC Optimizer",
+        "rt_supermarket": "Supermarket RT Controller",
+        "rt_ev": "Lidl EV RT Controller",
+        "rt_caltech": "Caltech EV RT Controller",
+        "rt_all": "All RT Simulations"
     };
     return mapping[key] || key;
 }
@@ -800,4 +858,111 @@ function refreshMPCPlots() {
     
     const caltechImg = document.querySelector("#mpcgallery-caltech img");
     if (caltechImg) caltechImg.src = `${API_BASE}/api/plots/mpc_schedule_caltech_ev.png?t=${t}`;
+}
+
+// Switch RT Visualizations Gallery Tabs
+function switchRTGallery(plotId) {
+    document.querySelectorAll("#rt-gallery-tabs .gallery-tab").forEach(btn => btn.classList.remove("active"));
+    document.querySelectorAll("#tab-rt .gallery-img-container").forEach(c => c.classList.add("hidden"));
+    
+    if (event && event.target) {
+        event.target.classList.add("active");
+    }
+    const targetEl = document.getElementById(`rtgallery-${plotId}`);
+    if (targetEl) targetEl.classList.remove("hidden");
+}
+
+// Load and populate RT Metrics Cards
+async function loadRTMetrics() {
+    try {
+        const res = await fetch(`${API_BASE}/api/rt/metrics`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || Object.keys(data).length === 0) return;
+
+        // Supermarket
+        if (data.supermarket) {
+            const sm = data.supermarket;
+            const sch = sm.scheduled_mpc;
+            const act = sm.real_time_actual;
+            const mc = sm.mismatch_categorization;
+            const dc = sm.dc_bus_balance;
+
+            const gcEl = document.getElementById("rt-supermarket-grid-cost");
+            const mpcCostEl = document.getElementById("rt-supermarket-mpc-cost");
+            const degEl = document.getElementById("rt-supermarket-deg-cost");
+            const curtEl = document.getElementById("rt-supermarket-curt");
+            const balEl = document.getElementById("rt-supermarket-balance");
+            const casesEl = document.getElementById("rt-supermarket-cases");
+
+            if (gcEl && act) gcEl.textContent = `EUR ${act.grid_cost_eur.toFixed(2)}`;
+            if (mpcCostEl && sch) mpcCostEl.textContent = `EUR ${sch.grid_cost_eur.toFixed(2)}`;
+            if (degEl && act) degEl.textContent = `EUR ${act.degradation_cost_eur.toFixed(4)}`;
+            if (curtEl && act) curtEl.textContent = `${act.curtailed_solar_kwh.toFixed(2)} kWh`;
+            if (balEl && dc) balEl.textContent = `${dc.max_residual_mismatch_kw.toFixed(6)} kW [PASSED]`;
+            if (casesEl && mc) casesEl.textContent = `${mc.deficit_intervals} Def / ${mc.surplus_intervals} Sur / ${mc.deadband_intervals} Deadband`;
+        }
+
+        // Lidl EV
+        if (data.ev) {
+            const ev = data.ev;
+            const sch = ev.scheduled_mpc;
+            const act = ev.real_time_actual;
+            const mc = ev.mismatch_categorization;
+            const dc = ev.dc_bus_balance;
+
+            const gcEl = document.getElementById("rt-ev-grid-cost");
+            const mpcCostEl = document.getElementById("rt-ev-mpc-cost");
+            const degEl = document.getElementById("rt-ev-deg-cost");
+            const curtEl = document.getElementById("rt-ev-curt");
+            const balEl = document.getElementById("rt-ev-balance");
+            const casesEl = document.getElementById("rt-ev-cases");
+
+            if (gcEl && act) gcEl.textContent = `EUR ${act.grid_cost_eur.toFixed(2)}`;
+            if (mpcCostEl && sch) mpcCostEl.textContent = `EUR ${sch.grid_cost_eur.toFixed(2)}`;
+            if (degEl && act) degEl.textContent = `EUR ${act.degradation_cost_eur.toFixed(4)}`;
+            if (curtEl && act) curtEl.textContent = `${act.curtailed_solar_kwh.toFixed(2)} kWh`;
+            if (balEl && dc) balEl.textContent = `${dc.max_residual_mismatch_kw.toFixed(6)} kW [PASSED]`;
+            if (casesEl && mc) casesEl.textContent = `${mc.deficit_intervals} Def / ${mc.surplus_intervals} Sur / ${mc.deadband_intervals} Deadband`;
+        }
+
+        // Caltech EV
+        if (data.caltech_ev) {
+            const ce = data.caltech_ev;
+            const sch = ce.scheduled_mpc;
+            const act = ce.real_time_actual;
+            const mc = ce.mismatch_categorization;
+            const dc = ce.dc_bus_balance;
+
+            const gcEl = document.getElementById("rt-caltech-grid-cost");
+            const mpcCostEl = document.getElementById("rt-caltech-mpc-cost");
+            const degEl = document.getElementById("rt-caltech-deg-cost");
+            const curtEl = document.getElementById("rt-caltech-curt");
+            const balEl = document.getElementById("rt-caltech-balance");
+            const casesEl = document.getElementById("rt-caltech-cases");
+
+            if (gcEl && act) gcEl.textContent = `EUR ${act.grid_cost_eur.toFixed(2)}`;
+            if (mpcCostEl && sch) mpcCostEl.textContent = `EUR ${sch.grid_cost_eur.toFixed(2)}`;
+            if (degEl && act) degEl.textContent = `EUR ${act.degradation_cost_eur.toFixed(4)}`;
+            if (curtEl && act) curtEl.textContent = `${act.curtailed_solar_kwh.toFixed(2)} kWh`;
+            if (balEl && dc) balEl.textContent = `${dc.max_residual_mismatch_kw.toFixed(6)} kW [PASSED]`;
+            if (casesEl && mc) casesEl.textContent = `${mc.deficit_intervals} Def / ${mc.surplus_intervals} Sur / ${mc.deadband_intervals} Deadband`;
+        }
+
+        refreshRTPlots();
+    } catch (err) {
+        console.error("Failed to load RT metrics:", err);
+    }
+}
+
+function refreshRTPlots() {
+    const t = new Date().getTime();
+    const smImg = document.querySelector("#rtgallery-supermarket img");
+    if (smImg) smImg.src = `${API_BASE}/api/plots/rt_schedule_supermarket.png?t=${t}`;
+    
+    const evImg = document.querySelector("#rtgallery-ev img");
+    if (evImg) evImg.src = `${API_BASE}/api/plots/rt_schedule_ev.png?t=${t}`;
+    
+    const caltechImg = document.querySelector("#rtgallery-caltech img");
+    if (caltechImg) caltechImg.src = `${API_BASE}/api/plots/rt_schedule_caltech_ev.png?t=${t}`;
 }
