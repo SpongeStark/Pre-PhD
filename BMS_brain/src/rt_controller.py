@@ -157,7 +157,7 @@ def run_rt_compensation(
         else:
             comp_error = err_filt
             
-        # 5. Layer 3: Physical Headroom Allocation & Secondary Compensation
+        # 5. Layer 3: Merit-Order Energy Hierarchy & Physical Headroom Allocation
         sch_grid = p_grid_sch[k]
         sch_ch = p_ch_sch[k]
         sch_dis = p_dis_sch[k]
@@ -165,79 +165,85 @@ def run_rt_compensation(
         # Local DC bus flows
         pv_gen_dc = (pv_actual[k] / eta_pvinverter) * eta_mppt
         load_dem_dc = load_actual[k] / eta_dcac
+        p_phys_net = pv_gen_dc - load_dem_dc  # > 0: physical excess solar, <= 0: physical deficit
+        
+        # Physical energy headroom limits
+        avail_dis_energy = max(0.0, ((current_e_b - SoC_min * E_B_max) / dt) * eta_d)
+        avail_ch_energy = max(0.0, ((SoC_max * E_B_max - current_e_b) / (dt * eta_c)))
 
-        if comp_error < 0.0:
+        if comp_error < -epsilon_tol:
             # === DEFICIT REGIME: Missing generation or demand surge ===
             p_deficit = abs(comp_error)
             
-            # Available discharge headroom: converter limit & energy floor
+            # Merit Order Step 1: Immediately cancel/reduce scheduled battery charging
+            if sch_ch > 0.0:
+                cancelled_ch = min(p_deficit, sch_ch)
+                target_ch = sch_ch - cancelled_ch
+                p_deficit_rem = p_deficit - cancelled_ch
+            else:
+                target_ch = 0.0
+                p_deficit_rem = p_deficit
+                
+            # Merit Order Step 2: Discharge battery to cover remaining deficit
+            # Constrained by converter rating (P_B_max - sch_dis), available stored energy,
+            # and actual DC load demand ceiling (cannot discharge more than building consumes)
             avail_dis = max(0.0, min(
                 P_B_max - sch_dis,
-                ((current_e_b - SoC_min * E_B_max) / dt) * eta_d
+                avail_dis_energy,
+                load_dem_dc - sch_dis
             ))
-            
-            # Battery takes as much deficit as possible
-            delta_dis = min(p_deficit, avail_dis)
+            delta_dis = min(p_deficit_rem, avail_dis)
             target_dis = sch_dis + delta_dis
-            target_ch = sch_ch
             
-            # Layer 4: Inverter Ramp-Rate Limiting on net battery power
-            target_p_bat = target_dis - target_ch
-            clamped_p_bat = np.clip(
-                target_p_bat,
-                p_bat_prev - delta_P_ramp_max,
-                p_bat_prev + delta_P_ramp_max
-            )
-            
-            if clamped_p_bat >= 0.0:
-                act_dis = clamped_p_bat
-                act_ch = 0.0
-            else:
-                act_dis = 0.0
-                act_ch = -clamped_p_bat
-
-        elif comp_error > 0.0:
+        elif comp_error > epsilon_tol:
             # === SURPLUS REGIME: Excess solar or load drop ===
             p_surplus = comp_error
             
-            # Available charging headroom: converter limit & energy ceiling
-            avail_ch = max(0.0, min(
-                P_B_max - sch_ch,
-                ((SoC_max * E_B_max - current_e_b) / (dt * eta_c))
-            ))
-            
-            delta_ch = min(p_surplus, avail_ch)
-            target_ch = sch_ch + delta_ch
-            target_dis = sch_dis
-            
-            target_p_bat = target_dis - target_ch
-            clamped_p_bat = np.clip(
-                target_p_bat,
-                p_bat_prev - delta_P_ramp_max,
-                p_bat_prev + delta_P_ramp_max
-            )
-            
-            if clamped_p_bat <= 0.0:
-                act_ch = -clamped_p_bat
-                act_dis = 0.0
+            if p_phys_net > 0.0:
+                # Subcase A: GENUINE PHYSICAL EXCESS SOLAR (PV > Load on DC Bus)
+                # Merit Order Step 1: Grid import is zero
+                # Merit Order Step 2: Battery discharge is eliminated
+                target_dis = 0.0
+                # Merit Order Step 3: Charge battery using physical excess solar
+                avail_ch = max(0.0, min(P_B_max, avail_ch_energy))
+                target_ch = min(p_phys_net, avail_ch)
+                # Merit Order Step 4: Any excess solar beyond target_ch is curtailed
             else:
-                act_ch = 0.0
-                act_dis = clamped_p_bat
-
+                # Subcase B: LOAD DROP / NO PHYSICAL EXCESS SOLAR (Night/evening load reduction)
+                # Building still consumes net power (load_dem_dc >= pv_gen_dc).
+                # There is NO physical excess solar to charge the battery!
+                # Merit Order Step 1: Reduce scheduled discharge if active (preserves stored energy)
+                if sch_dis > 0.0:
+                    reduced_dis = min(p_surplus, sch_dis)
+                    target_dis = sch_dis - reduced_dis
+                else:
+                    target_dis = 0.0
+                # Merit Order Step 2: Maintain scheduled charge only if explicitly planned by MPC,
+                # but NEVER initiate unscheduled grid charging from a forecast error!
+                target_ch = min(sch_ch, avail_ch_energy)
+                # Grid import will automatically reduce at the DC bus slack!
+                
         else:
-            # === DEADBAND BALANCED REGIME ===
-            target_p_bat = sch_dis - sch_ch
-            clamped_p_bat = np.clip(
-                target_p_bat,
-                p_bat_prev - delta_P_ramp_max,
-                p_bat_prev + delta_P_ramp_max
-            )
-            if clamped_p_bat >= 0.0:
-                act_dis = clamped_p_bat
-                act_ch = 0.0
-            else:
-                act_dis = 0.0
-                act_ch = -clamped_p_bat
+            # === DEADBAND BALANCED REGIME (|comp_error| <= epsilon_tol) ===
+            # Follow scheduled setpoints within current physical boundaries
+            target_dis = min(sch_dis, avail_dis_energy, load_dem_dc)
+            target_ch = min(sch_ch, avail_ch_energy)
+
+        # Layer 4: Inverter Ramp-Rate Limiting on net battery power
+        target_p_bat = target_dis - target_ch
+        clamped_p_bat = np.clip(
+            target_p_bat,
+            p_bat_prev - delta_P_ramp_max,
+            p_bat_prev + delta_P_ramp_max
+        )
+        
+        # Decompose into physical discharging and charging commands
+        if clamped_p_bat >= 0.0:
+            act_dis = min(clamped_p_bat, avail_dis_energy, load_dem_dc)
+            act_ch = 0.0
+        else:
+            act_dis = 0.0
+            act_ch = min(-clamped_p_bat, avail_ch_energy)
 
         # Exact DC Bus Power Balance:
         # Inflows: pv_gen_dc + act_grid * eta_acdc + act_dis

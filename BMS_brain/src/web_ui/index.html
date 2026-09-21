@@ -275,9 +275,14 @@
                                 24-Hour ahead multi-step machine learning forecasting (LightGBM vs. XGBoost) across generation and demand profiles.
                             </p>
                         </div>
-                        <button class="btn-large btn-caltech" id="btn-run-all-forecast" onclick="runScript('forecast_all')">
-                            🚀 Run All Forecasters & Compare
-                        </button>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn-large btn-caltech" id="btn-run-all-forecast" onclick="runScript('forecast_all')">
+                                🚀 Run All Forecasters & Compare
+                            </button>
+                            <button class="btn-large" style="background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);" id="btn-run-tuning" onclick="runScript('forecaster_tuning')">
+                                🎯 Run Optuna Hyperparameter Sweep
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Action Bar for Individual Targets -->
@@ -318,20 +323,56 @@
                         </div>
                     </div>
 
+                    <!-- Hyperparameter Optimization Scorecard Table -->
+                    <div class="forecast-scorecard-card" style="margin-top: 20px;">
+                        <div class="scorecard-header-row">
+                            <h3>🎯 Hyperparameter Optimization Benchmark (Default vs. Optuna Tuned Models)</h3>
+                            <button class="btn-copy" onclick="loadTuningMetrics()">↻ Refresh Tuning</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="forecast-table" id="tuning-metrics-table">
+                                <thead>
+                                    <tr>
+                                        <th>Asset Target</th>
+                                        <th>Model</th>
+                                        <th>Default R²</th>
+                                        <th>Tuned R²</th>
+                                        <th>Δ R²</th>
+                                        <th>Default MAE</th>
+                                        <th>Tuned MAE</th>
+                                        <th>MAE Improvement</th>
+                                        <th>Tuned WAPE</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="9" style="text-align:center; color: var(--text-muted);">Loading hyperparameter tuning comparison...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
                     <!-- Forecast Plots Gallery -->
                     <div class="plots-gallery">
-                        <h3>Forecast Visualizations</h3>
+                        <h3>Forecast & Hyperparameter Visualizations</h3>
                         <div class="gallery-tabs" id="forecast-gallery-tabs">
                             <button class="gallery-tab active" onclick="switchForecastGallery('scorecard')">📊 4-Target Scorecard</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('tuning')">🎯 Tuning Dashboard</button>
                             <button class="gallery-tab" onclick="switchForecastGallery('pv')">☀️ Solar PV</button>
                             <button class="gallery-tab" onclick="switchForecastGallery('con')">🏢 Supermarket (CON)</button>
-                            <button class="gallery-tab" onclick="switchForecastGallery('ev')">⚡ Lidl Commercial EV</button>
-                            <button class="gallery-tab" onclick="switchForecastGallery('caltech')">🎓 Caltech Campus EV</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('ev')">⚡ Lidl EV</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('caltech')">🎓 Caltech EV</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('tuning_pv')">🎯 PV Overlay</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('tuning_con')">🎯 Supermarket Overlay</button>
+                            <button class="gallery-tab" onclick="switchForecastGallery('tuning_caltech')">🎯 Caltech Overlay</button>
                         </div>
                         <div class="gallery-content">
                             <div class="gallery-img-container" id="fgallery-scorecard">
                                 <img src="/api/plots/forecast_scorecard.png" alt="Forecasting Scorecard" class="gallery-img" onerror="imgError(this)">
                                 <div class="img-placeholder">Plot not generated yet. Click 'Run All Forecasters' to build this scorecard.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="fgallery-tuning">
+                                <img src="/api/plots/tuning_comparison_dashboard.png" alt="Tuning Dashboard" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Optuna Hyperparameter Sweep' to build this dashboard.</div>
                             </div>
                             <div class="gallery-img-container hidden" id="fgallery-pv">
                                 <img src="/api/plots/forecast_pv.png" alt="PV Forecast Plot" class="gallery-img" onerror="imgError(this)">
@@ -347,6 +388,18 @@
                             </div>
                             <div class="gallery-img-container hidden" id="fgallery-caltech">
                                 <img src="/api/plots/forecast_caltech.png" alt="Caltech EV Forecast Plot" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="fgallery-tuning_pv">
+                                <img src="/api/plots/tuning_overlay_pv.png" alt="PV Tuning Overlay" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="fgallery-tuning_con">
+                                <img src="/api/plots/tuning_overlay_con.png" alt="Supermarket Tuning Overlay" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="fgallery-tuning_caltech">
+                                <img src="/api/plots/tuning_overlay_caltech.png" alt="Caltech EV Tuning Overlay" class="gallery-img" onerror="imgError(this)">
                                 <div class="img-placeholder">Plot not generated yet.</div>
                             </div>
                         </div>

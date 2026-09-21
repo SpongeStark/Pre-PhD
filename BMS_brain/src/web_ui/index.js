@@ -9,6 +9,8 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSystemStatus();
     // Load initial forecast metrics
     loadForecastMetrics();
+    // Load initial hyperparameter tuning metrics
+    loadTuningMetrics();
     // Load initial MPC metrics
     loadMPCMetrics();
     // Load initial RT metrics
@@ -23,8 +25,20 @@ function switchTab(tabId) {
     document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.remove("active"));
     
     // Find tab button that matches tabId
-    event.target.classList.add("active");
-    document.getElementById(`tab-${tabId}`).classList.add("active");
+    if (event && event.target) {
+        event.target.classList.add("active");
+    }
+    const panel = document.getElementById(`tab-${tabId}`);
+    if (panel) panel.classList.add("active");
+
+    if (tabId === "forecasting") {
+        loadForecastMetrics();
+        loadTuningMetrics();
+    } else if (tabId === "mpc") {
+        loadMPCMetrics();
+    } else if (tabId === "rt") {
+        loadRTMetrics();
+    }
 }
 
 // Switch Visualizations Gallery Tabs
@@ -419,7 +433,7 @@ function startLogPolling(scriptKey) {
     let targetBoxId = `log-${scriptKey}`;
     if (scriptKey === "battery_optimizer" || scriptKey === "battery_optimizer_ev" || scriptKey === "battery_optimizer_caltech") {
         targetBoxId = "log-battery_optimizer";
-    } else if (scriptKey.startsWith("forecast_")) {
+    } else if (scriptKey.startsWith("forecast_") || scriptKey === "forecaster_tuning") {
         targetBoxId = "log-forecast";
     } else if (scriptKey.startsWith("mpc_")) {
         targetBoxId = "log-mpc";
@@ -445,8 +459,9 @@ function startLogPolling(scriptKey) {
             if (data.status !== "running") {
                 stopLogPolling(scriptKey);
                 updateSystemStatus(); // refresh status immediately
-                if (scriptKey.startsWith("forecast_")) {
+                if (scriptKey.startsWith("forecast_") || scriptKey === "forecaster_tuning") {
                     loadForecastMetrics();
+                    loadTuningMetrics();
                 }
                 if (scriptKey.startsWith("mpc_")) {
                     loadMPCMetrics();
@@ -493,7 +508,7 @@ async function runScript(scriptKey) {
         let targetBoxId = `log-${scriptKey}`;
         if (scriptKey === "battery_optimizer" || scriptKey === "battery_optimizer_ev" || scriptKey === "battery_optimizer_caltech") {
             targetBoxId = "log-battery_optimizer";
-        } else if (scriptKey.startsWith("forecast_")) {
+        } else if (scriptKey.startsWith("forecast_") || scriptKey === "forecaster_tuning") {
             targetBoxId = "log-forecast";
         } else if (scriptKey.startsWith("mpc_")) {
             targetBoxId = "log-mpc";
@@ -662,6 +677,7 @@ function getNiceName(key) {
         "forecast_ev": "Lidl EV Forecaster",
         "forecast_caltech": "Caltech EV Forecaster",
         "forecast_all": "Multi-Target Forecaster Engine",
+        "forecaster_tuning": "Optuna Hyperparameter Sweep",
         "mpc_supermarket": "Supermarket MPC Optimizer",
         "mpc_ev": "Lidl EV MPC Optimizer",
         "mpc_caltech": "Caltech EV MPC Optimizer",
@@ -740,6 +756,52 @@ async function loadForecastMetrics() {
     }
 }
 
+// Load and populate Hyperparameter Tuning Metrics Table
+async function loadTuningMetrics() {
+    try {
+        const res = await fetch(`${API_BASE}/api/tuning/results`);
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        const tbody = document.querySelector("#tuning-metrics-table tbody");
+        if (!tbody) return;
+        
+        if (!data || !data.comparisons || data.comparisons.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color: var(--text-muted); padding: 20px;">No hyperparameter tuning metrics found. Click 'Run Optuna Hyperparameter Sweep' to benchmark.</td></tr>`;
+            return;
+        }
+        
+        let html = "";
+        data.comparisons.forEach(row => {
+            const r2Delta = row.r2_delta;
+            const r2DeltaColor = r2Delta > 0 ? '#10b981' : (r2Delta === 0 ? '#9ca3af' : '#ef4444');
+            const r2DeltaStr = `${r2Delta > 0 ? '+' : ''}${r2Delta.toFixed(4)}`;
+            
+            const maeImprv = row.mae_improvement_pct;
+            const maeColor = maeImprv > 0 ? '#10b981' : (maeImprv === 0 ? '#9ca3af' : '#ef4444');
+            const maeImprvStr = `${maeImprv > 0 ? '+' : ''}${maeImprv.toFixed(2)}%`;
+            
+            html += `
+                <tr>
+                    <td><strong>${row.target_name}</strong></td>
+                    <td><span style="font-family: monospace; font-weight: bold; color: var(--neon-cyan); background: rgba(6, 182, 212, 0.1); padding: 3px 8px; border-radius: 4px;">${row.model}</span></td>
+                    <td style="color: var(--text-muted);">${row.default_r2.toFixed(4)}</td>
+                    <td style="font-weight: bold; color: #10b981;">${row.tuned_r2.toFixed(4)}</td>
+                    <td style="font-weight: bold; color: ${r2DeltaColor};">${r2DeltaStr}</td>
+                    <td style="color: var(--text-muted);">${row.default_mae.toFixed(3)} kW</td>
+                    <td style="font-weight: bold; color: var(--text-primary);">${row.tuned_mae.toFixed(3)} kW</td>
+                    <td style="font-weight: bold; color: ${maeColor};">${maeImprvStr}</td>
+                    <td style="color: var(--neon-cyan); font-weight: 600;">${row.tuned_wape_pct.toFixed(2)}%</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+        refreshTuningPlots();
+    } catch (err) {
+        console.error("Failed to load tuning metrics:", err);
+    }
+}
+
 function refreshForecastPlots() {
     const t = new Date().getTime();
     const scorecardImg = document.querySelector("#fgallery-scorecard img");
@@ -756,6 +818,23 @@ function refreshForecastPlots() {
     
     const caltechImg = document.querySelector("#fgallery-caltech img");
     if (caltechImg) caltechImg.src = `${API_BASE}/api/plots/forecast_caltech.png?t=${t}`;
+    
+    refreshTuningPlots();
+}
+
+function refreshTuningPlots() {
+    const t = new Date().getTime();
+    const dashImg = document.querySelector("#fgallery-tuning img");
+    if (dashImg) dashImg.src = `${API_BASE}/api/plots/tuning_comparison_dashboard.png?t=${t}`;
+    
+    const pvImg = document.querySelector("#fgallery-tuning_pv img");
+    if (pvImg) pvImg.src = `${API_BASE}/api/plots/tuning_overlay_pv.png?t=${t}`;
+    
+    const conImg = document.querySelector("#fgallery-tuning_con img");
+    if (conImg) conImg.src = `${API_BASE}/api/plots/tuning_overlay_con.png?t=${t}`;
+    
+    const caltechImg = document.querySelector("#fgallery-tuning_caltech img");
+    if (caltechImg) caltechImg.src = `${API_BASE}/api/plots/tuning_overlay_caltech.png?t=${t}`;
 }
 
 // Switch MPC Visualizations Gallery Tabs

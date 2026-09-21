@@ -116,7 +116,8 @@ def get_forecast_and_actual_trajectories(mode: str, start_date: str, horizon: in
         val_pv = df_pv[(df_pv.index >= "2022-10-01") & (df_pv.index < start_date)]
         test_pv = df_pv[df_pv.index >= start_date]
         
-        forecaster_pv = ForecasterRecursive(estimator=get_models()["XGB"], lags=LAGS)
+        # Use Tuned LightGBM for PV (achieved R2=0.7232 vs XGB 0.7071)
+        forecaster_pv = ForecasterRecursive(estimator=get_models("pv")["LGBM"], lags=LAGS)
         forecaster_pv.fit(y=train_pv[target_col_pv], exog=train_pv[exog_cols_pv])
         lw_pv = val_pv[target_col_pv].iloc[-max(LAGS):]
         pv_forecast = forecaster_pv.predict(steps=horizon, last_window=lw_pv, exog=test_pv[exog_cols_pv].iloc[:horizon]).values
@@ -126,7 +127,7 @@ def get_forecast_and_actual_trajectories(mode: str, start_date: str, horizon: in
     else:
         # Standard 2024 test split starting at start_date (2024-10-01)
         df_pv, train_pv, val_pv, test_pv, target_col_pv, exog_cols_pv = load_and_preprocess("pv")
-        forecaster_pv = ForecasterRecursive(estimator=get_models()["XGB"], lags=LAGS)
+        forecaster_pv = ForecasterRecursive(estimator=get_models("pv")["LGBM"], lags=LAGS)
         forecaster_pv.fit(y=train_pv[target_col_pv], exog=train_pv[exog_cols_pv])
         lw_pv = val_pv[target_col_pv].iloc[-max(LAGS):]
         pv_forecast = forecaster_pv.predict(steps=horizon, last_window=lw_pv, exog=test_pv[exog_cols_pv].iloc[:horizon]).values
@@ -137,7 +138,7 @@ def get_forecast_and_actual_trajectories(mode: str, start_date: str, horizon: in
     # 2. Load Asset Demand Forecast and Actual
     df_load, train_load, val_load, test_load, target_col_load, exog_cols_load = load_and_preprocess(load_target_key)
     best_regressor = "LGBM" if load_target_key in ["con", "caltech"] else "XGB"
-    forecaster_load = ForecasterRecursive(estimator=get_models()[best_regressor], lags=LAGS)
+    forecaster_load = ForecasterRecursive(estimator=get_models(load_target_key)[best_regressor], lags=LAGS)
     forecaster_load.fit(y=train_load[target_col_load], exog=train_load[exog_cols_load])
     lw_load = val_load[target_col_load].iloc[-max(LAGS):]
     load_forecast = forecaster_load.predict(steps=horizon, last_window=lw_load, exog=test_load[exog_cols_load].iloc[:horizon]).values

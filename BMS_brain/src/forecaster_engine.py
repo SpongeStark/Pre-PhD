@@ -98,24 +98,133 @@ def compute_metrics(actual, pred):
         "energy_bias_pct": round(bias, 2)
     }
 
-def get_models():
-    """Returns the candidate forecasting regressors."""
-    return {
-        "LGBM": LGBMRegressor(
-            n_estimators=120,
-            learning_rate=0.06,
-            random_state=42,
-            verbose=-1,
-            n_jobs=-1
-        ),
-        "XGB": XGBRegressor(
-            n_estimators=120,
-            learning_rate=0.06,
-            max_depth=5,
-            random_state=42,
-            n_jobs=-1
-        )
+# Discovered Optimal Hyperparameters (Optuna Bayesian Optimization)
+TUNED_HYPERPARAMETERS = {
+    "pv": {
+        "LGBM": {
+            "n_estimators": 100, "learning_rate": 0.06466, "max_depth": 5, "num_leaves": 119,
+            "reg_alpha": 0.00108, "reg_lambda": 0.07072, "subsample": 0.8279, "colsample_bytree": 0.8800
+        },
+        "XGB": {
+            "n_estimators": 120, "learning_rate": 0.09787, "max_depth": 7,
+            "reg_alpha": 0.5728, "reg_lambda": 0.7058, "subsample": 0.8995, "colsample_bytree": 0.9805
+        }
+    },
+    "con": {
+        "LGBM": {
+            "n_estimators": 140, "learning_rate": 0.09655, "max_depth": 8, "num_leaves": 89,
+            "reg_alpha": 0.00042, "reg_lambda": 0.00047, "subsample": 0.7645, "colsample_bytree": 0.9665
+        },
+        "XGB": {
+            "n_estimators": 140, "learning_rate": 0.09655, "max_depth": 7,
+            "reg_alpha": 0.0248, "reg_lambda": 0.00047, "subsample": 0.7890, "colsample_bytree": 0.7645
+        }
+    },
+    "caltech": {
+        "LGBM": {
+            "n_estimators": 200, "learning_rate": 0.08016, "max_depth": 6, "num_leaves": 122,
+            "reg_alpha": 0.5944, "reg_lambda": 0.00349, "subsample": 0.8356, "colsample_bytree": 0.7539
+        },
+        "XGB": {
+            "n_estimators": 140, "learning_rate": 0.08503, "max_depth": 5,
+            "reg_alpha": 0.0492, "reg_lambda": 0.00085, "subsample": 0.8671, "colsample_bytree": 0.9214
+        }
+    },
+    "ev": {
+        "LGBM": {
+            "n_estimators": 180, "learning_rate": 0.07627, "max_depth": 8, "num_leaves": 93,
+            "reg_alpha": 0.00048, "reg_lambda": 0.00113, "subsample": 0.9998, "colsample_bytree": 0.7513
+        },
+        "XGB": {
+            "n_estimators": 160, "learning_rate": 0.06896, "max_depth": 4,
+            "reg_alpha": 0.00244, "reg_lambda": 0.0566, "subsample": 0.8451, "colsample_bytree": 0.9326
+        }
     }
+}
+
+def load_tuned_params(target_key: str = None):
+    """Attempts to read latest best_hyperparameters.json, falling back to TUNED_HYPERPARAMETERS."""
+    json_path = RESULTS_DIR / "best_hyperparameters.json"
+    params = dict(TUNED_HYPERPARAMETERS)
+    if json_path.exists():
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    params.update(loaded)
+        except Exception:
+            pass
+    if target_key and target_key in params:
+        return params[target_key]
+    return params
+
+def get_models(target_key: str = None):
+    """
+    Returns candidate forecasting regressors instantiated with Optuna-tuned
+    hyperparameters for the specified target (or default tuned parameters).
+    """
+    params = load_tuned_params(target_key)
+    if target_key and target_key in TUNED_HYPERPARAMETERS:
+        t_params = params if isinstance(params.get("LGBM"), dict) else TUNED_HYPERPARAMETERS[target_key]
+        lgbm_p = t_params.get("LGBM", {})
+        xgb_p = t_params.get("XGB", {})
+        
+        return {
+            "LGBM": LGBMRegressor(
+                n_estimators=int(lgbm_p.get("n_estimators", 140)),
+                learning_rate=float(lgbm_p.get("learning_rate", 0.08)),
+                max_depth=int(lgbm_p.get("max_depth", 6)),
+                num_leaves=int(lgbm_p.get("num_leaves", 63)),
+                reg_alpha=float(lgbm_p.get("reg_alpha", 0.001)),
+                reg_lambda=float(lgbm_p.get("reg_lambda", 0.01)),
+                subsample=float(lgbm_p.get("subsample", 0.85)),
+                colsample_bytree=float(lgbm_p.get("colsample_bytree", 0.85)),
+                random_state=42,
+                verbose=-1,
+                n_jobs=-1
+            ),
+            "XGB": XGBRegressor(
+                n_estimators=int(xgb_p.get("n_estimators", 140)),
+                learning_rate=float(xgb_p.get("learning_rate", 0.08)),
+                max_depth=int(xgb_p.get("max_depth", 5)),
+                reg_alpha=float(xgb_p.get("reg_alpha", 0.05)),
+                reg_lambda=float(xgb_p.get("reg_lambda", 0.05)),
+                subsample=float(xgb_p.get("subsample", 0.85)),
+                colsample_bytree=float(xgb_p.get("colsample_bytree", 0.85)),
+                random_state=42,
+                n_jobs=-1
+            )
+        }
+    else:
+        return {
+            "LGBM": LGBMRegressor(
+                n_estimators=140,
+                learning_rate=0.08,
+                max_depth=6,
+                num_leaves=63,
+                reg_alpha=0.001,
+                reg_lambda=0.01,
+                random_state=42,
+                verbose=-1,
+                n_jobs=-1
+            ),
+            "XGB": XGBRegressor(
+                n_estimators=140,
+                learning_rate=0.08,
+                max_depth=5,
+                reg_alpha=0.05,
+                reg_lambda=0.05,
+                random_state=42,
+                n_jobs=-1
+            )
+        }
+
+def get_best_model(target_key: str):
+    """Returns the top performing tuned estimator and its algorithm name."""
+    models = get_models(target_key)
+    # LightGBM won PV, CON, and Caltech; XGB won Lidl EV
+    best_algo = "XGB" if target_key == "ev" else "LGBM"
+    return best_algo, models[best_algo]
 
 def load_and_preprocess(target_key: str):
     """Loads, sanitizes, and splits the time-series dataset."""
@@ -177,7 +286,7 @@ def train_and_evaluate_target(target_key: str, model_choice: str = "compare"):
     print(f"Split sizes: Train={len(train)} steps, Val={len(val)} steps, Test Pool={len(test)} steps")
     print(f"Exogenous features ({len(exog_cols)}): {exog_cols}")
     
-    models = get_models()
+    models = get_models(target_key)
     if model_choice != "compare" and model_choice.upper() in models:
         models = {model_choice.upper(): models[model_choice.upper()]}
         
