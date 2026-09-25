@@ -408,71 +408,71 @@ def plot_rt_results(mode: str, time_index: pd.DatetimeIndex, rt_df: pd.DataFrame
       Panel 5: Grid Import & Solar Curtailment (MPC Planned vs. RT Actual)
     """
     fig, axes = plt.subplots(5, 1, figsize=(15, 16), sharex=True)
-    fig.patch.set_facecolor("#0f172a")
+    fig.patch.set_facecolor("#ffffff")
     for ax in axes:
-        ax.set_facecolor("#1e293b")
-        ax.grid(True, linestyle="--", alpha=0.3, color="#64748b")
-        ax.tick_params(colors="#cbd5e1", labelsize=9)
+        ax.set_facecolor("#ffffff")
+        ax.grid(True, linestyle="--", alpha=0.6, color="#e2e8f0")
+        ax.tick_params(colors="#1e293b", labelsize=9)
         for spine in ax.spines.values():
-            spine.set_color("#334155")
+            spine.set_color("#cbd5e1")
             
     # Panel 1: Generation & Load
     ax1 = axes[0]
-    ax1.plot(time_index, rt_df["P_PV_actual_kW"], color="#fbbf24", linewidth=1.8, label="PV Actual (Meas)")
-    ax1.plot(time_index, rt_df["P_PV_forecast_kW"], color="#f59e0b", linestyle="--", linewidth=1.4, alpha=0.8, label="PV Forecast (Day-Ahead)")
-    ax1.plot(time_index, rt_df["P_load_actual_kW"], color="#f87171", linewidth=1.8, label="Load Actual (Meas)")
-    ax1.plot(time_index, rt_df["P_load_forecast_kW"], color="#ef4444", linestyle="--", linewidth=1.4, alpha=0.8, label="Load Forecast (Day-Ahead)")
-    ax1.set_ylabel("Power (kW)", color="#e2e8f0", fontsize=10, fontweight="bold")
-    ax1.set_title(f"2-Day Real-Time Secondary Control: {sizing['name']} (48 Hours)", color="#f8fafc", fontsize=12, fontweight="bold", pad=8)
-    ax1.legend(loc="upper right", framealpha=0.8, facecolor="#0f172a", edgecolor="#334155", labelcolor="#cbd5e1", fontsize=8)
+    ax1.plot(time_index, rt_df["P_PV_actual_kW"], color="#d97706", linewidth=1.8, label="PV Actual (Meas)")
+    ax1.plot(time_index, rt_df["P_PV_forecast_kW"], color="#f59e0b", linestyle="--", linewidth=1.4, alpha=0.9, label="PV Forecast (Day-Ahead)")
+    ax1.plot(time_index, rt_df["P_load_actual_kW"], color="#dc2626", linewidth=1.8, label="Load Actual (Meas)")
+    ax1.plot(time_index, rt_df["P_load_forecast_kW"], color="#f87171", linestyle="--", linewidth=1.4, alpha=0.9, label="Load Forecast (Day-Ahead)")
+    ax1.set_ylabel("Power (kW)", color="#0f172a", fontsize=10, fontweight="bold")
+    ax1.set_title(f"2-Day Real-Time Secondary Control: {sizing['name']} (48 Hours)", color="#0f172a", fontsize=12, fontweight="bold", pad=8)
+    ax1.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
     
     # Panel 2: DC Bus Forecast Error
     ax2 = axes[1]
-    ax2.plot(time_index, rt_df["P_Error_raw_kW"], color="#94a3b8", linewidth=1.0, alpha=0.5, label="P_Error Raw Mismatch")
-    ax2.plot(time_index, rt_df["P_Error_filtered_kW"], color="#38bdf8", linewidth=1.8, label="P_Error Filtered (3-State History)")
-    ax2.axhline(0.5, color="#10b981", linestyle=":", linewidth=1.2, label="Deadband (+/-0.5 kW)")
-    ax2.axhline(-0.5, color="#10b981", linestyle=":", linewidth=1.2)
+    ax2.plot(time_index, rt_df["P_Error_raw_kW"], color="#94a3b8", linewidth=1.0, alpha=0.7, label="P_Error Raw Mismatch")
+    ax2.plot(time_index, rt_df["P_Error_filtered_kW"], color="#0284c7", linewidth=1.8, label="P_Error Filtered (3-State History)")
+    ax2.axhline(0.5, color="#059669", linestyle=":", linewidth=1.2, label="Deadband (+/-0.5 kW)")
+    ax2.axhline(-0.5, color="#059669", linestyle=":", linewidth=1.2)
     ax2.axhline(0.0, color="#64748b", linestyle="-", linewidth=0.8)
-    ax2.fill_between(time_index, -0.5, 0.5, color="#10b981", alpha=0.1)
-    ax2.set_ylabel("DC Mismatch (kW)", color="#e2e8f0", fontsize=10, fontweight="bold")
-    ax2.legend(loc="upper right", framealpha=0.8, facecolor="#0f172a", edgecolor="#334155", labelcolor="#cbd5e1", fontsize=8)
+    ax2.fill_between(time_index, -0.5, 0.5, color="#10b981", alpha=0.15)
+    ax2.set_ylabel("DC Mismatch (kW)", color="#0f172a", fontsize=10, fontweight="bold")
+    ax2.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
     
     # Panel 3: Battery Power Dispatch (MPC vs RT)
     ax3 = axes[2]
     # Net battery power: P_dis - P_ch
     p_bat_sch = rt_df["P_dis_sch_kW"] - rt_df["P_ch_sch_kW"]
     p_bat_rt = rt_df["P_dis_rt_kW"] - rt_df["P_ch_rt_kW"]
-    ax3.plot(time_index, p_bat_sch, color="#a855f7", linestyle="--", linewidth=1.5, label="MPC Net Battery (Planned)")
-    ax3.plot(time_index, p_bat_rt, color="#c084fc", linewidth=1.8, label="RT Compensated Battery (Actual)")
-    ax3.axhline(sizing["P_B_max"], color="#ef4444", linestyle=":", linewidth=1.0, label=f"+P_B_max ({sizing['P_B_max']:.1f} kW)")
-    ax3.axhline(-sizing["P_B_max"], color="#3b82f6", linestyle=":", linewidth=1.0, label=f"-P_B_max (-{sizing['P_B_max']:.1f} kW)")
-    ax3.set_ylabel("Battery P (kW)", color="#e2e8f0", fontsize=10, fontweight="bold")
-    ax3.legend(loc="upper right", framealpha=0.8, facecolor="#0f172a", edgecolor="#334155", labelcolor="#cbd5e1", fontsize=8)
+    ax3.plot(time_index, p_bat_sch, color="#7c3aed", linestyle="--", linewidth=1.5, label="MPC Net Battery (Planned)")
+    ax3.plot(time_index, p_bat_rt, color="#9333ea", linewidth=1.8, label="RT Compensated Battery (Actual)")
+    ax3.axhline(sizing["P_B_max"], color="#dc2626", linestyle=":", linewidth=1.0, label=f"+P_B_max ({sizing['P_B_max']:.1f} kW)")
+    ax3.axhline(-sizing["P_B_max"], color="#2563eb", linestyle=":", linewidth=1.0, label=f"-P_B_max (-{sizing['P_B_max']:.1f} kW)")
+    ax3.set_ylabel("Battery P (kW)", color="#0f172a", fontsize=10, fontweight="bold")
+    ax3.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
     
     # Panel 4: Battery State of Charge
     ax4 = axes[3]
-    ax4.plot(time_index, rt_df["SoC_sch"], color="#a855f7", linestyle="--", linewidth=1.5, label="MPC Planned SoC")
-    ax4.plot(time_index, rt_df["SoC_rt"], color="#34d399", linewidth=2.0, label="RT Dynamic SoC")
-    ax4.axhline(0.90, color="#ef4444", linestyle=":", linewidth=1.0, label="Max Limit (90%)")
-    ax4.axhline(0.20, color="#f59e0b", linestyle=":", linewidth=1.0, label="Min Safety (20%)")
-    ax4.set_ylabel("Battery SoC", color="#e2e8f0", fontsize=10, fontweight="bold")
+    ax4.plot(time_index, rt_df["SoC_sch"], color="#7c3aed", linestyle="--", linewidth=1.5, label="MPC Planned SoC")
+    ax4.plot(time_index, rt_df["SoC_rt"], color="#059669", linewidth=2.0, label="RT Dynamic SoC")
+    ax4.axhline(0.90, color="#dc2626", linestyle=":", linewidth=1.0, label="Max Limit (90%)")
+    ax4.axhline(0.20, color="#d97706", linestyle=":", linewidth=1.0, label="Min Safety (20%)")
+    ax4.set_ylabel("Battery SoC", color="#0f172a", fontsize=10, fontweight="bold")
     ax4.set_ylim(0.15, 0.95)
-    ax4.legend(loc="upper right", framealpha=0.8, facecolor="#0f172a", edgecolor="#334155", labelcolor="#cbd5e1", fontsize=8)
+    ax4.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
     
     # Panel 5: Grid Import & Curtailment
     ax5 = axes[4]
-    ax5.plot(time_index, rt_df["P_grid_sch_kW"], color="#64748b", linestyle="--", linewidth=1.4, label="MPC Grid Import (Planned)")
-    ax5.plot(time_index, rt_df["P_grid_rt_kW"], color="#38bdf8", linewidth=1.8, label="RT Grid Import (Actual)")
-    ax5.plot(time_index, rt_df["P_curt_rt_kW"], color="#ec4899", linewidth=1.5, label="RT PV Curtailment (Throttled)")
-    ax5.set_ylabel("Grid / Curt (kW)", color="#e2e8f0", fontsize=10, fontweight="bold")
-    ax5.set_xlabel("Operational Time Horizon (15-Minute Intervals)", color="#e2e8f0", fontsize=10, fontweight="bold")
-    ax5.legend(loc="upper right", framealpha=0.8, facecolor="#0f172a", edgecolor="#334155", labelcolor="#cbd5e1", fontsize=8)
+    ax5.plot(time_index, rt_df["P_grid_sch_kW"], color="#475569", linestyle="--", linewidth=1.4, label="MPC Grid Import (Planned)")
+    ax5.plot(time_index, rt_df["P_grid_rt_kW"], color="#0284c7", linewidth=1.8, label="RT Grid Import (Actual)")
+    ax5.plot(time_index, rt_df["P_curt_rt_kW"], color="#db2777", linewidth=1.5, label="RT PV Curtailment (Throttled)")
+    ax5.set_ylabel("Grid / Curt (kW)", color="#0f172a", fontsize=10, fontweight="bold")
+    ax5.set_xlabel("Operational Time Horizon (15-Minute Intervals)", color="#0f172a", fontsize=10, fontweight="bold")
+    ax5.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
     
     # Format x-axis dates nicely
     ax5.xaxis.set_major_formatter(mdates.DateFormatter("%b %d\n%H:%M"))
     
     plt.tight_layout()
-    plt.savefig(save_path, dpi=200, facecolor=fig.get_facecolor(), edgecolor="none")
+    plt.savefig(save_path, dpi=200, facecolor="#ffffff", edgecolor="none")
     plt.close()
     print(f"Saved 5-panel RT schedule visualization to {save_path}")
 

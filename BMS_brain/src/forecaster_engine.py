@@ -465,8 +465,9 @@ def generate_combined_scorecard(all_results, all_trajectories, save_path):
         
         pred_label = "HIGH PREDICTABILITY" if r2 >= 0.70 else ("MODERATE PREDICTABILITY" if r2 >= 0.30 else "SPARSE / INTERMITTENT")
         
+        panel_letter = chr(ord('A') + idx)
         ax.set_title(
-            f"[{idx+1}] {cfg['name']}\n"
+            f"[{panel_letter}] {cfg['name']}\n"
             f"{pred_label} | R²={r2:.3f} | MAE={best_metrics['mae']:.2f} kW | WAPE={wape:.1f}% | Bias={bias:+.1f}%",
             fontsize=10, fontweight="bold", pad=8
         )
