@@ -4,7 +4,7 @@ Benchmarks machine learning forecasting models (LightGBM vs XGBoost)
 across 4 microgrid assets:
   1. Solar PV Generation (master_dataset.parquet)
   2. Supermarket Facility Load (master_dataset_con.parquet)
-  3. Lidl EV Charging Stations (master_dataset_ev.parquet)
+  3. Supermarket Commercial EV Chargers (master_dataset_ev.parquet)
   4. Caltech Campus EV Fleet (master_dataset_caltech_ev.parquet)
 
 Outputs predictions, metrics (R2, MAE, RMSE, nRMSE), and publication-quality
@@ -52,7 +52,7 @@ TARGET_CONFIGS = {
         "exog_cols": ["temp", "hour_sin", "hour_cos", "doy_sin", "doy_cos", "dow_sin", "dow_cos"]
     },
     "ev": {
-        "name": "Lidl Commercial EV Chargers",
+        "name": "Supermarket Commercial EV Chargers",
         "file": "master_dataset_ev.parquet",
         "target_col": "c_ev",
         "unit": "kW",
@@ -222,7 +222,7 @@ def get_models(target_key: str = None):
 def get_best_model(target_key: str):
     """Returns the top performing tuned estimator and its algorithm name."""
     models = get_models(target_key)
-    # LightGBM won PV, CON, and Caltech; XGB won Lidl EV
+    # LightGBM won PV, CON, and Caltech; XGB won Supermarket EV
     best_algo = "XGB" if target_key == "ev" else "LGBM"
     return best_algo, models[best_algo]
 
@@ -335,7 +335,7 @@ def train_and_evaluate_target(target_key: str, model_choice: str = "compare"):
             
         preds = np.clip(np.array(daily_preds), 0.0, None)
         
-        # Standby power handling for Lidl EV (idle baseline ~0.08 kW)
+        # Standby power handling for Supermarket EV (idle baseline ~0.08 kW)
         if target_key == "ev":
             preds = np.where(preds < 0.25, 0.08, preds)
             
