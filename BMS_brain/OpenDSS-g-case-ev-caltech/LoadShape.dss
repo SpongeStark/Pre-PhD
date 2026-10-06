@@ -1,0 +1,12 @@
+! --------------------------------------------------------------------------
+! LoadShape.dss - Case 3: Caltech Campus EV Fleet (c_ev)
+! --------------------------------------------------------------------------
+
+! 1. Target Demand Profile (Caltech workplace campus EV charging fleet (c_ev))
+New "LoadShape.target_load_shape" npts=24 interval=1.0 mult=[0.0706 0.0580 0.0443 0.0356 0.0306 0.0266 0.0525 0.0935 0.3192 0.7936 1.0000 0.8771 0.6731 0.6023 0.5178 0.4130 0.3255 0.2344 0.2116 0.2162 0.1968 0.1637 0.1012 0.0807]
+
+! 2. Solar PV Generation Shape (IDENTICAL across all 3 cases)
+New "LoadShape.solar_shape" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0099 0.0854 0.2496 0.4567 0.6810 0.8529 0.9604 0.9973 1.0000 0.9602 0.8699 0.7222 0.5223 0.3243 0.1514 0.0318 0.0006 0.0 0.0 0.0]
+
+! 3. Battery Storage Dispatch Shape (IDENTICAL across all 3 cases)
+New "LoadShape.bess_dispatch" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 -0.4 -0.8 -1.0 -0.9 -0.6 0.0 0.0 0.3 0.8 1.0 0.9 0.7 0.2 0.0 0.0]

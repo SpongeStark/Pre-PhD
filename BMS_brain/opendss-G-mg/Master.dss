@@ -1,0 +1,22 @@
+Clear
+New Circuit.microgrid_bms_dc
+
+
+Redirect Vsource.dss
+Redirect LoadShape.dss
+Redirect GrowthShape.dss
+Redirect XYcurve.dss
+Redirect TCC_Curve.dss
+Redirect Spectrum.dss
+Redirect em_pcc\Branches.dss
+Redirect em_pcc\Loads.dss
+Redirect em_inv\Branches.dss
+Redirect em_inv\Shunts.dss
+Redirect em_inv\Loads.dss
+Redirect Transformer.dss
+Redirect Monitor.dss
+Redirect EnergyMeter.dss
+MakeBusList
+Redirect BusVoltageBases.dss  ! set voltage bases
+Buscoords BusCoords.dss
+GIScoords GISCoords.dss

@@ -1,0 +1,12 @@
+! --------------------------------------------------------------------------
+! Storage.dss - Battery Energy Storage System (BESS) & BMS on Common DC Bus
+! --------------------------------------------------------------------------
+
+! BESS / BMS connected to the equivalent DC bus node (n_bat_dc)
+! Key parameters adapted from research model:
+!   - Energy Capacity: 40 kWh, Continuous Power: 20 kW
+!   - Efficiencies: %effcharge=95.0, %effdischarge=95.0 (eta_c=0.95, eta_d=0.95)
+!   - BMS Reserve: %reserve=20.0 (SoC_min = 20% to prevent accelerated degradation)
+!   - Reactive Power: kvarMax=0.0, kvarMaxAbs=0.0 (pure DC active power exchange)
+!   - Dispatch: Follows daily shape 'bess_dispatch' (charges at noon, discharges at evening peak)
+New "Storage.sto_0" phases=3 bus1=n_bat_dc.1.2.3 kv=0.23 kVA=20.0 kWrated=20.0 kWhrated=40.0 kWhstored=20.0 %reserve=20.0 %effcharge=95.0 %effdischarge=95.0 %IdlingkW=0.1 kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 daily=bess_dispatch dispMode=Follow State=IDLING

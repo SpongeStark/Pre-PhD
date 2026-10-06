@@ -1,0 +1,3 @@
+New "Monitor.moon1" element=load.ev_c mode=0 terminal=1 PPolar=yes residual=no VIPolar=yes enabled=true
+New "Monitor.pv_mon" element=pvsystem.pv_1 mode=0 terminal=1 PPolar=yes residual=no VIPolar=yes enabled=true
+New "Monitor.mon_bat" element=storage.sto_0 mode=7 terminal=1 PPolar=yes residual=no VIPolar=yes enabled=true

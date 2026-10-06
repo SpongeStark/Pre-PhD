@@ -1,0 +1,2 @@
+! Battery Energy Storage System (BESS) & BMS on Common Bus (n_bat)
+New "Storage.sto_0" phases=3 bus1=n_bat.1.2.3 kv=0.23 kVA=20.0 kWrated=20.0 kWhrated=40.0 kWhstored=20.0 %reserve=20.0 %effcharge=95.0 %effdischarge=95.0 %IdlingkW=0.1 kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 daily=bess_dispatch dispMode=Follow State=IDLING

@@ -1,0 +1,16 @@
+! --------------------------------------------------------------------------
+! LoadShape.dss - Self-contained 24-hour profiles for Microgrid Simulation
+! --------------------------------------------------------------------------
+
+! 1. Supermarket Consumption Shape (Lidl Commercial Load Profile)
+New "LoadShape.sm_shape" npts=24 interval=1.0 mult=[0.42 0.40 0.39 0.40 0.43 0.55 0.72 0.85 0.92 0.95 0.98 1.00 0.97 0.96 0.95 0.98 0.99 0.95 0.88 0.75 0.60 0.50 0.46 0.44]
+
+! 2. Solar PV Generation Shape (Irradiance profile, peak at solar noon)
+New "LoadShape.solar_shape" npts=24 interval=1.0 mult=[0.00 0.00 0.00 0.00 0.00 0.00 0.05 0.22 0.48 0.74 0.91 1.00 0.98 0.89 0.72 0.51 0.28 0.08 0.01 0.00 0.00 0.00 0.00 0.00]
+
+! 3. Electric Vehicle (EV) Fast Charging Shape
+New "LoadShape.ev_shape" npts=24 interval=1.0 mult=[0.00 0.00 0.00 0.00 0.00 0.05 0.15 0.35 0.65 0.80 0.85 0.95 0.90 0.85 0.75 0.80 0.90 1.00 0.75 0.45 0.25 0.10 0.05 0.00]
+
+! 4. Battery Storage Dispatch Shape (Negative = Charge, Positive = Discharge)
+! Charges during midday solar excess (hours 11-14), Discharges during evening peak tariff (hours 17-21)
+New "LoadShape.bess_dispatch" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 -0.4 -0.8 -1.0 -0.9 -0.6 0.0 0.0 0.3 0.8 1.0 0.9 0.7 0.2 0.0 0.0]

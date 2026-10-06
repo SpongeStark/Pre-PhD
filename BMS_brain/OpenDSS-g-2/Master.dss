@@ -1,0 +1,36 @@
+! ==========================================================================
+! Master.dss - Master Execution Script for Approach B Microgrid
+! Common DC Bus modeled via Virtual Micro-Reactor Line System in OpenDSS-G
+! ==========================================================================
+
+Clear
+New Circuit.microgrid_bms_dc
+
+! 1. Network Foundation and Shapes
+Redirect LoadShape.dss
+Redirect GrowthShape.dss
+Redirect TCC_Curve.dss
+Redirect Spectrum.dss
+
+! 2. Grid Source & Power Components
+Redirect Vsource.dss
+Redirect Transformer.dss
+Redirect Line.dss
+Redirect Loads.dss
+Redirect PVSystem.dss
+Redirect Storage.dss
+Redirect SwtControl.dss
+
+! 3. Monitoring & Metering
+Redirect Monitor.dss
+Redirect EnergyMeter.dss
+
+! 4. Bus Processing & Coordinates
+MakeBusList
+Redirect BusVoltageBases.dss
+Buscoords BusCoords.dss
+GIScoords GISCoords.dss
+
+! 5. Snapshot Power Flow Solution
+Set Mode=Snapshot
+Solve

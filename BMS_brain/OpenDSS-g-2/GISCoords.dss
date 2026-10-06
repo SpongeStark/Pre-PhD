@@ -1,0 +1,8 @@
+sbus, 0, 0
+slv, 0, 0
+pcc, 0, 0
+n_load, 0, 0
+n_dc_bus, 0, 0
+n_pv_dc, 0, 0
+n_bat_dc, 0, 0
+n_ev_dc, 0, 0

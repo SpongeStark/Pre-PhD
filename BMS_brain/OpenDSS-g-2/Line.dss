@@ -1,0 +1,27 @@
+! --------------------------------------------------------------------------
+! Line.dss - AC Lines and Central Inverter Virtual Micro-Reactor Line
+! --------------------------------------------------------------------------
+
+! 1. Substation LV Main Feeder: connects Transformer secondary (slv) to PCC
+! Real LV cable (240 mm2 Cu, ~0.09 ohm/km, 50 meters -> R_total = 0.0045 ohm)
+New "Line.line_0" phases=3 bus1=slv.1.2.3 bus2=pcc.1.2.3 r1=0.09 x1=0.08 r0=0.27 x0=0.24 length=0.05 units=km Normamps=1200 Emergamps=1500
+
+! 2. AC Supermarket Building Feeder: connects PCC to Supermarket AC Load
+! Internal feeder (95 mm2 Cu, ~0.23 ohm/km, 20 meters -> R_total = 0.0046 ohm)
+New "Line.line_load" phases=3 bus1=pcc.1.2.3 bus2=n_load.1.2.3 r1=0.23 x1=0.08 r0=0.69 x0=0.24 length=0.02 units=km Normamps=400 Emergamps=500
+
+! 3. VIRTUAL MICRO-REACTOR LINE (Central Bidirectional Inverter Interface)
+! Links the AC PCC to the Common Equivalent DC Bus (n_dc_bus).
+! Models the AC interface reactor of the central inverter with small, numerically stable impedance.
+! Rating corresponds to the central inverter maximum capacity (50 kVA @ 230V -> ~125.5 A).
+! Length=0.001 km (1 meter), r1=0.20 ohm/km -> R_total = 0.0002 ohm.
+New "Line.line_reactor" phases=3 bus1=pcc.1.2.3 bus2=n_dc_bus.1.2.3 r1=0.20 x1=0.20 r0=0.20 x0=0.20 length=0.001 units=km Normamps=130 Emergamps=160
+
+! 4. DC Bus Internal Virtual Branch: PV Array connection to DC bus (R_total = 0.0001 ohm)
+New "Line.line_pv_dc" phases=3 bus1=n_dc_bus.1.2.3 bus2=n_pv_dc.1.2.3 r1=0.10 x1=0.10 r0=0.10 x0=0.10 length=0.001 units=km Normamps=100 Emergamps=120
+
+! 5. DC Bus Internal Virtual Branch: Battery / BMS connection to DC bus (R_total = 0.0001 ohm)
+New "Line.line_bat_dc" phases=3 bus1=n_dc_bus.1.2.3 bus2=n_bat_dc.1.2.3 r1=0.10 x1=0.10 r0=0.10 x0=0.10 length=0.001 units=km Normamps=100 Emergamps=120
+
+! 6. DC Bus Internal Virtual Branch: EV DC Fast Charger connection to DC bus (R_total = 0.0001 ohm)
+New "Line.line_ev_dc" phases=3 bus1=n_dc_bus.1.2.3 bus2=n_ev_dc.1.2.3 r1=0.10 x1=0.10 r0=0.10 x0=0.10 length=0.001 units=km Normamps=100 Emergamps=120

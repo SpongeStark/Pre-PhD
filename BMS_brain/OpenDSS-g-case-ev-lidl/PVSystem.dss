@@ -1,0 +1,5 @@
+! 1. MPPT Flat Efficiency Curve (eta_mppt = 0.99)
+New "XYCurve.mppt_eff" npts=4 xarray=[0.1 0.2 0.5 1.0] yarray=[0.99 0.99 0.99 0.99]
+
+! 2. Solar PV System on Common Bus (n_pv)
+New "PVSystem.pv_1" phases=3 bus1=n_pv.1.2.3 kv=0.23 kVA=20.0 Pmpp=20.0 EffCurve=mppt_eff kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 ControlMode=GFL daily=solar_shape

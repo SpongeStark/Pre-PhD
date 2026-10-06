@@ -1,0 +1,12 @@
+! --------------------------------------------------------------------------
+! PVSystem.dss - Solar Photovoltaic Generation on Common DC Bus
+! --------------------------------------------------------------------------
+
+! 1. Define Inverter / MPPT Flat Efficiency Curve (eta_mppt = 0.99)
+! Setting efficiency to 99% flat reflects the DC/DC MPPT stage without
+! incurring artificial AC inverter round-trip losses on the DC bus.
+New "XYCurve.mppt_eff" npts=4 xarray=[0.1 0.2 0.5 1.0] yarray=[0.99 0.99 0.99 0.99]
+
+! 2. PV System connected to the equivalent DC bus node (n_pv_dc)
+! kvarMax=0 and kvarMaxAbs=0 enforce zero reactive power on the DC bus
+New "PVSystem.pv_1" phases=3 bus1=n_pv_dc.1.2.3 kv=0.23 kVA=20.0 Pmpp=20.0 EffCurve=mppt_eff kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 ControlMode=GFL daily=solar_shape

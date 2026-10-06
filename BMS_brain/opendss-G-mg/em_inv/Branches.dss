@@ -1,0 +1,5 @@
+New "Line.line_reactor" phases=3 bus1=pcc.1.2.3 bus2=n_dc_bus.1.2.3 r1=0.2 x1=0.2 r0=0.2 x0=0.2 length=0.001 units=km normamps=130 emergamps=160
+New "SwtControl.sw_inv" SwitchedObj=line.line_reactor State=Closed Action=close
+New "Line.line_ev_dc" phases=3 bus1=n_dc_bus.1.2.3 bus2=n_ev_dc.1.2.3 r1=0.1 x1=0.1 r0=0.1 x0=0.1 length=0.001 units=km normamps=100 emergamps=120
+New "Line.line_bat_dc" phases=3 bus1=n_dc_bus.1.2.3 bus2=n_bat_dc.1.2.3 r1=0.1 x1=0.1 r0=0.1 x0=0.1 length=0.001 units=km normamps=100 emergamps=120
+New "Line.line_pv_dc" phases=3 bus1=n_dc_bus.1.2.3 bus2=n_pv_dc.1.2.3 r1=0.1 x1=0.1 r0=0.1 x0=0.1 length=0.001 units=km normamps=100 emergamps=120

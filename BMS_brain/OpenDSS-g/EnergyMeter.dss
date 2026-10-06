@@ -1,0 +1,1 @@
+New "EnergyMeter.em_1" 3phaseLosses=YES element=Line.line_load LineLosses=YES LocalOnly=NO Losses=YES PhaseVoltageReport=NO SeqLosses=YES terminal=1 VbaseLosses=YES XfmrLosses=YES enabled=true

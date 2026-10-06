@@ -1,0 +1,10 @@
+! --------------------------------------------------------------------------
+! Loads.dss - AC Supermarket Consumption and DC Bus EV Fast Charger
+! --------------------------------------------------------------------------
+
+! 1. AC Supermarket Base Consumption (Lidl commercial store: lighting, cooling, HVAC)
+New "Load.sm_load" phases=3 bus1=n_load.1.2.3 kV=0.23 kW=40.0 pf=0.95 model=1 daily=sm_shape
+
+! 2. DC Bus Electric Vehicle (EV) Fast Charging Load
+! Directly connected to the DC bus (n_ev_dc) with PF=1.0 and zero kvar (pure active DC load)
+New "Load.ev_dc" phases=3 bus1=n_ev_dc.1.2.3 kV=0.23 kW=15.0 pf=1.0 kvar=0.0 model=1 daily=ev_shape

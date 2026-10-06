@@ -1,0 +1,1 @@
+New "PVSystem.pv_1" bus1=n_pv1.1.2.3 kv=0.23 ControlMode=GFL kVA=5 kvarMax=5 kvarMaxAbs=5 daily=solar

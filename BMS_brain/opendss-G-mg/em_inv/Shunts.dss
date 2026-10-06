@@ -1,0 +1,2 @@
+New "Storage.sto_0" phases=3 bus1=n_bat_dc.1.2.3 kv=0.23 kVA=20 kWrated=20 kWhrated=40 kWhstored=20 %reserve=20 %EffCharge=95 %EffDischarge=95 %IdlingkW=0.1 kvarMax=0 kvarMaxAbs=0 pf=1 daily=bess_dispatch DispMode=Follow State=IDLING
+New "PVSystem.pv_1" phases=3 bus1=n_pv_dc.1.2.3 kv=0.23 kVA=20 Pmpp=20 EffCurve=mppt_eff kvarMax=0 kvarMaxAbs=0 pf=1 ControlMode=GFL daily=solar_shape

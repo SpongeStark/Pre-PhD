@@ -1,0 +1,21 @@
+! --------------------------------------------------------------------------
+! Monitor.dss - System Monitors for AC Grid and DC Microgrid
+! --------------------------------------------------------------------------
+
+! 1. Central Inverter Flow Monitor: records 3-phase P (kW) and Q (kvar) across the Virtual Micro-Reactor Line
+New "Monitor.inv_flow" element=Line.line_reactor terminal=1 mode=1 PPolar=no enabled=true
+
+! 2. Grid PCC Monitor: records total net active and reactive power exchanged with utility
+New "Monitor.grid_pcc" element=Line.line_0 terminal=1 mode=1 PPolar=no enabled=true
+
+! 3. Battery Storage & BMS Monitor: mode=7 records kW, kWh stored, and SoC state
+New "Monitor.bat_mon" element=Storage.sto_0 terminal=1 mode=7 enabled=true
+
+! 4. PV Generation Monitor: records PV active power output (kW)
+New "Monitor.pv_mon" element=PVSystem.pv_1 terminal=1 mode=1 PPolar=no enabled=true
+
+! 5. Supermarket AC Load Monitor: records supermarket demand (kW, kvar)
+New "Monitor.sm_mon" element=Load.sm_load terminal=1 mode=1 PPolar=no enabled=true
+
+! 6. DC EV Charger Monitor: records EV charging demand (kW)
+New "Monitor.ev_mon" element=Load.ev_dc terminal=1 mode=1 PPolar=no enabled=true

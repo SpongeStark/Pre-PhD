@@ -1,0 +1,4 @@
+! --------------------------------------------------------------------------
+! SwtControl.dss - Switch Controls for Microgrid Islanding / Isolation
+! --------------------------------------------------------------------------
+New "SwtControl.sw_inv" SwitchedObj=Line.line_reactor State=closed Action=close

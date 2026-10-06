@@ -1,0 +1,7 @@
+New "LoadShape.default" npts=24 interval=1 mult=[ 0.677 0.6256 0.6087 0.5833 0.58028 0.6025 0.657 0.7477 0.832 0.88 0.94 0.989 0.985 0.98 0.9898 0.999 1 0.958 0.936 0.913 0.876 0.876 0.828 0.756] mean=0.82582833 stddev=0.15309161
+New "LoadShape.solar" npts=24 interval=1 MemoryMapping=No csvfile=curva_solar.csv
+New "LoadShape.new_profile" npts=24 interval=0 MemoryMapping=No csvfile="C:\Users\alesk\Documents\Banque_de_lenergie_V2\Microgrid_Alfredo\C3 Perfil Carga Barranquilla.CSV"
+New "LoadShape.barra" npts=24 interval=1 MemoryMapping=No csvfile="C:\Users\alesk\Documents\Banque_de_lenergie_V2\Microgrid_Alfredo\C2 Perfil Solar Barranquilla.CSV"
+New "LoadShape.barrac" npts=24 interval=1 MemoryMapping=No csvfile="C:\Users\alesk\Documents\Banque_de_lenergie_V2\Microgrid_Alfredo\C3 Perfil Carga Barranquilla.CSV"
+New "LoadShape.baranncq" npts=24 interval=1 MemoryMapping=No csvfile="C:\Users\alesk\Documents\Banque_de_lenergie_V2\Microgrid_Alfredo\C3 Perfil Carga Barranquilla.CSV"
+New "LoadShape.pv1since" npts=24 interval=1 MemoryMapping=No csvfile="C:\Users\alesk\Documents\Banque_de_lenergie_V2\Microgrid_Alfredo\C3 Perfil Solar Sincelejo.CSV"

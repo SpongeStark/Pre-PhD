@@ -1,0 +1,1 @@
+New "Load.sm_load" phases=3 bus1=n_load.1.2.3 kV=0.23 kW=40 pf=0.95 model=1 daily=sm_shape

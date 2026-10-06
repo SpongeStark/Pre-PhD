@@ -1,0 +1,2 @@
+New "Line.line_load" bus1=n_l.1.2.3 bus2=n_l1.1.2.3
+New "SwtControl.sw_4" SwitchedObj=line.line_load State=Closed Action=close

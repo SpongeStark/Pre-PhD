@@ -1,0 +1,2 @@
+Edit "Vsource.source" bus1=sbus.1.2.3 bus2=sbus.0.0.0 basekv=11.000000 Isc1=5 Isc3=3000 pu=1.050000
+New "Vsource.vsource_1" baseMVA=0.1 bus2=n_b.0.0.0 MVAsc1=100 MVAsc3=150 pu=0.900000 basekv=0.230000 bus1=pcc.1.2.3 enabled=false ENABLED=NO

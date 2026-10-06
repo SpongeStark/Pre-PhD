@@ -1,0 +1,1 @@
+New "Load.ev_dc" phases=3 bus1=n_ev_dc.1.2.3 kV=0.23 kW=15 pf=1 kvar=0 model=1 daily=ev_shape

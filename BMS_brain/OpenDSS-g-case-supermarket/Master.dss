@@ -1,0 +1,26 @@
+Clear
+New Circuit.microgrid_common_bus
+
+Redirect LoadShape.dss
+Redirect GrowthShape.dss
+Redirect TCC_Curve.dss
+Redirect Spectrum.dss
+
+Redirect Vsource.dss
+Redirect Transformer.dss
+Redirect Line.dss
+Redirect Loads.dss
+Redirect PVSystem.dss
+Redirect Storage.dss
+Redirect SwtControl.dss
+
+Redirect Monitor.dss
+Redirect EnergyMeter.dss
+
+MakeBusList
+Redirect BusVoltageBases.dss
+Buscoords BusCoords.dss
+GIScoords GISCoords.dss
+
+Set Mode=Snapshot
+Solve

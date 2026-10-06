@@ -1,0 +1,5 @@
+New "Line.line_4" bus1=pcc.1.2.3 bus2=n_l.1.2.3
+New "Line.line_0" bus1=slv.1.2.3 bus2=pcc.1.2.3
+New "Line.line_2" bus1=pcc.1.2.3 bus2=n_pv.1.2.3
+New "Line.line_3" bus1=pcc.1.2.3 bus2=n_b.1.2.3
+New "Line.line_pv" bus1=n_pv.1.2.3 bus2=n_pv1.1.2.3

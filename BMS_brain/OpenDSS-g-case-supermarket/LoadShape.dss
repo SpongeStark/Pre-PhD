@@ -1,0 +1,12 @@
+! --------------------------------------------------------------------------
+! LoadShape.dss - Case 1: Supermarket Facility Load (c_gen)
+! --------------------------------------------------------------------------
+
+! 1. Target Demand Profile (Supermarket facility base consumption (c_gen))
+New "LoadShape.target_load_shape" npts=24 interval=1.0 mult=[0.5072 0.4905 0.4857 0.4790 0.5081 0.9323 1.0000 0.6378 0.4213 0.3380 0.2656 0.2185 0.2331 0.2215 0.2665 0.3138 0.3971 0.4753 0.5763 0.6394 0.5933 0.5327 0.5379 0.5136]
+
+! 2. Solar PV Generation Shape (IDENTICAL across all 3 cases)
+New "LoadShape.solar_shape" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0099 0.0854 0.2496 0.4567 0.6810 0.8529 0.9604 0.9973 1.0000 0.9602 0.8699 0.7222 0.5223 0.3243 0.1514 0.0318 0.0006 0.0 0.0 0.0]
+
+! 3. Battery Storage Dispatch Shape (IDENTICAL across all 3 cases)
+New "LoadShape.bess_dispatch" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 -0.4 -0.8 -1.0 -0.9 -0.6 0.0 0.0 0.3 0.8 1.0 0.9 0.7 0.2 0.0 0.0]

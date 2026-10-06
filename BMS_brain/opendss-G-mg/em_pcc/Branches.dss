@@ -1,0 +1,2 @@
+New "Line.line_0" phases=3 bus1=slv.1.2.3 bus2=pcc.1.2.3 r1=0.09 x1=0.08 r0=0.27 x0=0.24 length=0.05 units=km normamps=1200 emergamps=1500
+New "Line.line_load" phases=3 bus1=pcc.1.2.3 bus2=n_load.1.2.3 r1=0.23 x1=0.08 r0=0.69 x0=0.24 length=0.02 units=km normamps=400 emergamps=500

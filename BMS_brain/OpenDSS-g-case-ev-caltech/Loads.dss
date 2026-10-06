@@ -1,0 +1,5 @@
+! --------------------------------------------------------------------------
+! Loads.dss - Case 3: Caltech Campus EV Fleet (c_ev)
+! EXACT SAME CONNECTION (n_load on Common Bus), ONLY LOAD CONFIGURATION CHANGES
+! --------------------------------------------------------------------------
+New "Load.load_1" phases=3 bus1=n_load.1.2.3 kV=0.23 kW=40.0 pf=1.0 model=1 daily=target_load_shape

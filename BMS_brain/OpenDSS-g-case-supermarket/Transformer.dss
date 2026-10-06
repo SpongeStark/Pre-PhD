@@ -1,0 +1,1 @@
+New "Transformer.xfmr_0" windings=2 XHL=10 buses=[sbus.1.2.3, slv.1.2.3] conns=[delta, wye] kVs=[11.0, 0.23] kVAs=[800, 800] taps=[1.0, 1.0] wdg=1 %R=0.2 wdg=2 %R=0.2

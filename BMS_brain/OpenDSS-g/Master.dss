@@ -1,0 +1,23 @@
+Clear
+New Circuit.network
+
+
+Redirect LoadShape.DSS
+Redirect Vsource.dss
+Redirect LoadShape.dss
+Redirect GrowthShape.dss
+Redirect TCC_Curve.dss
+Redirect Spectrum.dss
+Redirect em_1\Branches.dss
+Redirect em_1\Loads.dss
+Redirect Line.dss
+Redirect Transformer.dss
+Redirect Storage.dss
+Redirect SwtControl.dss
+Redirect PVSystem.dss
+Redirect Monitor.dss
+Redirect EnergyMeter.dss
+MakeBusList
+Redirect BusVoltageBases.dss  ! set voltage bases
+Buscoords BusCoords.dss
+GIScoords GISCoords.dss

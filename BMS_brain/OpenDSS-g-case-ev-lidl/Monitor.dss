@@ -1,0 +1,5 @@
+New "Monitor.inv_flow" element=Line.line_reactor terminal=1 mode=1 PPolar=no enabled=true
+New "Monitor.grid_pcc" element=Line.line_0 terminal=1 mode=1 PPolar=no enabled=true
+New "Monitor.bat_mon" element=Storage.sto_0 terminal=1 mode=7 enabled=true
+New "Monitor.pv_mon" element=PVSystem.pv_1 terminal=1 mode=1 PPolar=no enabled=true
+New "Monitor.load_mon" element=Load.load_1 terminal=1 mode=1 PPolar=no enabled=true
