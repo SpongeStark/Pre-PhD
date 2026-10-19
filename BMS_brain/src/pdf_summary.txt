@@ -1,0 +1,1358 @@
+=== PAGE 1 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+OpenDSS PVSystem and InvControl Element
+Models
+1 OpenDSS PVSystem Element Model
+Figure1showsaschematicdiagramofthePVSystemelementmodelthatis implementedin OpenDSS
+version 9 and above. The model combines the photovoltaic (PV) array and the PV inverter. It
+assumes that the inverter is capable of tracking the maximum power point (mpp) of the panel
+quickly, allowing adequate use in QSTS simulations with a time step of at least one second. This
+considerably facilitates PV modeling and is an adequate assumption for most interconnection impact
+studies.
+˙Icomp ¯Ylinear
+˙Iterm
+Pdc Pac+jQac
+Array Inverter
+Norton Equivalent
+DC
+AC
+Operation
+Conditions
+˙V
+Figure 1: Block diagram of the PVSystem element model
+1.1 Deﬁnition of PVSystem properties
+The properties needed to deﬁne a PVSystem element in OpenDSS can be separated into 3 groups:
+1. PV array properties;
+2. PV inverter properties;
+3. Operating conditions properties.
+These groups are described separately below.
+1
+
+=== PAGE 2 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+1.1.1 PV array properties
+The PV array properties that need to be deﬁned in the model are:
+• Pmpp: The rated maximum power of the PV array, inkW, for 1kW/m2 irradiance and a
+user-deﬁned temperature. TheP-TCurve property (below) should be deﬁned relative to the
+user-deﬁned temperature.
+• P-TCurve: Correction factor curve of the PV array per unit ofPmpp as a function of the
+PV array temperature. As can be seen in Figure 2, the correction factor should be1.0 for
+the temperature at which Pmpp is deﬁned, in this case25 /uni2103. The PV array generates its
+rated maximum power,Pmpp, when operating at that temperature,25 /uni2103, and with1kW/m2
+irradiance. To deﬁne this curve in OpenDSS, the user must use the XYCurve object, as shown
+below.  
+New XYCurve . FatorPvsT n p t s=4 x a r r a y =[0 25 75 1 0 0 ] y a r r a y = [ 1 . 2 1 . 0 . 8 . 6 ]
+
+ 	 
+0 25 50 75 100
+0
+0, 4
+0, 8
+1
+1, 2
+Temperature [/uni2103]
+Correction Factor [pu]
+Figure 2: Correction factor vs Temperature
+1.1.2 PV inverter properties
+The inverter properties that may be deﬁned in the model are:
+• kVA: Inverter’s kVA rating;
+• kV: Nominal rated (1.0 per unit) voltage, kV, for PVSystem element:
+–If 3-phase PVSystem elements, specify line-to-line kV;
+–If 1-phase wye (star or LN), specify line-to-ground kV;
+–If 1-phase delta or phase-phase connected, specify line-to-line kV.
+• Phases: Number of Phases of PVSystem element;
+2
+
+=== PAGE 3 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+• bus1: Bus to which the PVSystem element is connected. May include nodes deﬁnition;
+• conn: Connection of PVSystem element;
+• PF: Power factor for the output power (AC power). Setting this property will force the in-
+verter to operate in CONSTANT POWER FACTOR MODE. By deﬁnition, when this value is
+negative, the inverter absorbs reactive power (inductive characteristic) and, when positive, it
+provides reactive power (capacitive characteristic);
+• kvar: Output reactive power. Setting this property forces the inverter to operate in CON-
+STANT kvar MODE. When this value is negative, the inverter absorbs reactive power (induc-
+tive characteristic) and, when positive, provides reactive power (capacitive characteristic);
+• %Pmpp: Upper limit on output active power as a percentage ofPmpp;
+• %cutin: Percentage of inverter’s kVA rating, seekVAproperty. When the inverter is OFF, the
+power from the PV array (DC power) must be greater than this value for the inverter to turn
+ON;
+• %cutout: Percentage of inverter’s kVA rating, seekVA property. When the inverter is ON, it
+turns OFF when the power from the array (DC power) drops below this value;
+• kvarMax: Maximum value of reactive power, inkvar, that the inverter can provide to the grid;
+• kvarMaxAbs: Maximum value of reactive power, inkvar, that the inverter can absorb from the
+grid (as an un-signed value);
+• VarFollowInverter: Boolean variable which indicates that the reactive power does not respect
+the inverter status.
+–When set to True, PVSystem’s reactive power will cease when the inverter status is OFF,
+due to the power from PV array dropping below%cutout. The reactive power will begin
+again when the power from PV array is above%cutin;
+–When set to False, PVSystem will provide/absorb reactive power regardless of the status
+of the inverter.
+• WattPriority: Boolean variable which determines whether the inverter should prioritize the
+active or reactive power when its capacity,kVA , is exceeded.
+–When set to True, the active power is prioritized;
+–When set to False, the reactive power is prioritized.
+• PFPriority: Boolean variable which, when set to True, forces the power factor value to its
+rated value,PF , when the inverter capacity,kVA , is exceeded. This property, if enabled, takes
+precedence overWattPriority property;
+• %PminNoVars: Percentage of thePmpp. The inverter is not allowed to provide/absorb reactive
+power when its active output power is less than this value;
+• %PminkvarMax: Percentage of thePmpp. The inverter can provide/absorb reactive power up
+to its maximum allowed value,kvarMax or kvarMaxAbs, respectively, when its active output
+power is greater than this value;
+3
+
+=== PAGE 4 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+• EﬀCurve: Inverter eﬃciency curve. This curve characterizes the variation of the inverter
+eﬃciency as a function of the power from PV array,Pdc, in per unit of inverter’s kVA rating, as
+can be seen in the Figure 3. For each DC bus voltage, there is an eﬃciency curve of the inverter,
+however, the present version of the model only deﬁnes one curve that generally corresponds
+to the rated voltage of the DC bus. To deﬁne this curve in OpenDSS, the user must use the
+XYCurve object, as shown below.  
+New XYCurve . E f f n p t s=4 x a r r a y = [ . 1 . 2 . 4 1 . 0 ] y a r r a y = [ . 8 6 . 9 . 9 3 . 9 7 ]
+
+ 	 
+0 0, 5 1
+0
+0, 5
+1
+Pdc/kVA [pu]
+η [pu]
+Figure 3: Inverter eﬃciency curve
+1.1.3 Operating conditions properties
+The irradiance and temperature on the PV array are the data that deﬁne the operating condition.
+Irradiance The properties to deﬁne the irradiance for a time duration are:
+• irradiance: Base value of irradiance inkW/m2 for QSTS simulations and present irradiance
+value for static simulations;
+• yearly or daily or duty: yearly, daily or duty irradiance curves, respectively. These curves are
+deﬁned inpu of the value deﬁned in theirradiance property. To deﬁne this curve in OpenDSS,
+Figure 4, you must use the LoadShape object, as shown below.  
+New Loadshape . I r r a d n p t s =24 i n t e r v a l =1
+~ mult =[0 0 0 0 0 0 . 1 . 2 . 3 . 5 . 8 . 9 1 . 0 1 . 0 . 9 9 . 9 . 7 . 4 . 1 0 0 0 0 0 ]
+
+ 	 
+Temperature
+• temperature: Present temperature on the PV array. This property is used only for static
+simulations, whileTshape is used for QSTS simulations;
+4
+
+=== PAGE 5 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+0 4 8 12 16 20 24
+0
+0, 5
+1
+Time [hour]
+Irradiance [pu]
+Figure 4: Daily irradiance curve
+• Tshape: Temperature curve for a time duration, in/uni2103, on the PV array. To deﬁne this curve
+in OpenDSS, the user must use the Tshape object, as shown below.  
+New Tshape . Temp n p t s =24 i n t e r v a l =1
+~ temp =[25 25 25 25 25 25 25 25 35 40 45 50 60 60 55 40 35 30 25 25 25 25 25 2 5 ]
+
+ 	 
+0 4 8 12 16 20 24
+0
+20
+40
+60
+Time [hour]
+Temperature [/uni2103]
+Figure 5: Daily temperature curve
+1.2 Interface to circuit model
+PVSystem is considered to be a PC element that is modeled by a Norton equivalent in which the
+constant and linear Norton admittance is included in¯Ysystem and the nonlinear characteristics are
+represented by the compensation current sources. The Norton equivalent is calculated based on the
+5
+
+=== PAGE 6 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+present output power delivered to the circuit (grid), as presented in the subsubsection 1.2.1, and a
+few PVSystem properties.
+1.2.1 Power delivered to the circuit
+The steps taken to obtain the power delivered to the circuit in the time step,t, are presented in this
+section. This process can be repeated multiple times for the same time step,t, within the control
+loop if there is an InvControl element controlling this PVSystem.
+Step 1: Calculation of PV array’s output powerThe irradiance at a time step,t, is converted
+into PV array’s DC output power,Pdc[t], according to Equation 1.
+Pdc[t] =Pmpp×irradiance×irradiance[t]×PTCurve (Temperature [t]) (1)
+Where:
+•irradiance: Base value of irradiance inkW/m2. For static simulations, this value represents
+the present irradiance on PV array and therefore there is no need to deﬁneirradiance[t];
+•irradiance[t]: Value of the yearly, daily or duty irradiance curve in the time step,t;
+•PTCurve (Temperature [t]): Value of the correction factor in the time stept due to the tem-
+perature Temperature [t];
+•Temperature [t]: Value of the temperature curve in time stept. For static simulations, however,
+the user must set the present temperatureTemperature instead of this property.
+Besides the inverter eﬃciency curve, another simpliﬁcation of the model considers that the ratio of
+PV array’s output power,Pdc, to irradiance is linear, as can be seen in the Simpliﬁed curve (red
+curve) of Figure 6, however, the relationship between them, Real curve, is not constant for the entire
+range of irradiance values. It should be noted that the Real curve (blue curve) of Figure 6 does not
+correspond to a measured curve, it is just illustrative.
+Step 2: Checking the PV inverter status The inverter status at time stept depends on its
+status in the previous time step,t− 1, as shown below.
+When the inverter status is OFF int− 1, it means thatPac[t− 1] = 0. It is turned ON int according
+to Equation 2.
+Status[t] = ON, if Pdc[t]≥ %cutin×kVA
+100 (2)
+When the inverter status is ON int− 1, it means thatPac[t− 1]> 0. It is turned OFF int according
+to Equation 3.
+Status[t] = OFF, if Pdc[t]< %cutout×kVA
+100 (3)
+6
+
+=== PAGE 7 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+0 0, 5 1
+0
+0, 5
+1
+Irradiance [pu]
+Pdc [pu]
+simpliﬁed
+Real
+Figure 6: PV array output power vs Irradiance
+One model constraint is the need to have%cutout less than or equal to%cutin.
+Step 3: Calculation of the inverter desired active output power The inverter desired
+active output power is calculated by Equation 4. In this step, the maximum active power limit is
+also veriﬁed by means of the%Pmpp property of the PVSystem and the active power limit,PLimit[t],
+resulting from an eventual operation of the volt-watt function of an InvControl element that might
+be controlling the PVSystem.
+P′
+ac[t] =
+
+
+
+0, if the inverter status is OFF
+PLimitMin[t], if Pdc[t]×EffCurve ≥PLimitMin[t]
+Pdc[t]×EffCurve, otherwise
+(4)
+Where:
+PLimitMin[t] =
+
+
+
+min
+(%Pmpp×Pmpp
+100 ,PLimit[t]
+)
+,PLimit[t] from volt-watt
+%Pmpp×Pmpp
+100 , otherwise
+(5)
+Step 4: Speciﬁcation of inverter desired reactive powerThe inverter desired reactive power,
+Q′
+ac, is deﬁned separately from the active power and can be speciﬁed as either a ﬁxed kvar value,
+using the kvar property, or as a function of a constant power factor usingPF property. In the
+ﬁrst case, the inverter must try to keep the value of the reactive power constant and equal tokvar,
+regardless of the present value of the output active power. In the second case, which corresponds to
+the smart inverter function named as constant power factor, the inverter changes the reactive power
+to maintain the nominal power factor. Another way of setting the desired value of the reactive power,
+Q′
+ac, is done by the operation of a few functions of the InvControl element, as shown in the section 2.
+7
+
+=== PAGE 8 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+Step 5: Checking the inverter reactive power limits The desired reactive power after the
+veriﬁcation of its limits is presented in equations 6 and 7. Equation 6 is used when the desired
+reactive power,Q′
+ac[t], is positive and, Equation 7, when it is negative.
+Q′′
+ac[t] =
+{
+Q′
+ac[t], if Q′
+ac[t]<|QLimit[t]|
+|QLimit[t]|, if Q′
+ac[t]≥|QLimit[t]| (6)
+Q′′
+ac[t] =
+{
+−|QLimitneg[t]|, if Q′
+ac[t]<−|QLimitneg[t]|
+Q′
+ac[t], if−|QLimitneg[t]|≤ Q′
+ac[t] (7)
+Equation 8 and Equation 9 present the limits of the provided and absorbed reactive power, respec-
+tively, as a function of the active power delivered to the grid.
+|QLimit[t]| =
+
+
+
+0, if Pac[t]<P min
+kvarMax
+Pmax
+×Pac[t], if Pmin≤Pac[t]<P max
+kvarMax, if Pac[t]≥Pmax
+(8)
+|QLimitneg[t]| =
+
+
+
+0, if Pac[t]<P min
+kvarMaxAbs
+Pmax
+×Pac[t], if Pmin≤Pac[t]<P max
+kvarMaxAbs, if Pac[t]≥Pmax
+(9)
+Where:
+•Pmin = %PminNoVars ×Pmpp
+100
+•Pmax = %PminkvarMax ×Pmpp
+100
+If the inverter status is OFF,Q′′
+ac[t] can only be non-zero when theVarFollowInverter property is set
+to NO or False.
+Step 6: Checking inverter capability The maximum inverter capacity corresponds to its kVA
+rating. Active and reactive power that are delivered to the grid can be deﬁned according to Equations
+10 and 11 when the inverter capacity is not exceeded.
+Pac[t] =P′
+ac[t] (10)
+Qac[t] =Q′′
+ac[t] (11)
+If its capacity is exceeded, the PV inverter limits the value of| ¯S[t]| to its kVA rating,kVA property.
+As a result,P′
+ac[t] and/or Q′′
+ac[t] should be reduced to meet one of the following 3 priorities:
+8
+
+=== PAGE 9 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+•Power factor priorityEquations 12 and 13 present the values of the active and reactive
+power that are delivered to the grid when the inverter capacity is exceeded under power factor
+priority.
+Pac[t] =kVA×|PF| (12)
+Qac[t] =kVA×
+√
+1−PF 2×signal(PF ) (13)
+•Active power priorityEquation 14 presents the new reduced value of the reactive power that
+is delivered to the circuit when the inverter capacity is exceeded under active power priority.
+If the active power is greater than or equal to the capacity of the inverter, the new value of
+the active power that is delivered to the grid becomes the kVA rating and therefore, there is
+no room for reactive power, according to Equation 15.
+Qac[t] =
+√
+kVA 2−Pac[t]2 (14)
+Pac[t] =
+{
+kVA, if P′
+ac[t]≥kVA
+P′
+ac[t], otherwise (15)
+•Reactive power priorityEquation 16 presents the new reduced value of the active power that
+is delivered to the circuit when the inverter capacity is exceeded under reactive power priority.
+If the reactive power is greater than or equal to the capacity of the inverter, the new value of
+the reactive power becomes the capacity of the inverter itself, according to Equation 17, but
+this can only happen if the inverter is capable of providing or absorbing reactive power without
+any active power, in other words, when theVarFollowInverter property is set to either NO or
+False.
+Pac[t] =
+√
+kVA 2−Qac[t]2 (16)
+Qac[t] =
+{
+kVA×signal(Q′′
+ac[t]), if|Q′′
+ac[t]|≥ kVA
+Q′′
+ac[t], otherwise (17)
+Finally, the apparent power provided by the PVSystem in a time stept can be written according to
+Equation 18.
+¯S[t] =Pac[t] +jQac[t] (18)
+9
+
+=== PAGE 10 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+˙Iterm1
+˙Icomp1
+¯Ylinear
+˙Ilinear1
+˙Iterm2
+˙Icomp2
+¯Ylinear
+˙Ilinear2
+˙Iterm3
+˙Icomp3
+¯Ylinear
+˙Ilinear3
+Connection Bus
+1
+2
+3
+0
+˙V1
+˙V2
+˙V3
+Figure 7: A three-phase PVSystem modeled as a Norton Equivalent
+1.2.2 Norton equivalent
+This section presents the Norton equivalent deﬁnition for a three-phase PVSystem connected to the
+grid through the bus named as Connection Bus, as presented in Figure 7.
+By observing Figure 7, the following electric quantities can be deﬁned:
+• Nodal voltages:
+˙V =
+
+
+˙V1
+˙V2
+˙V3
+
+ (19)
+• Terminal currents:
+˙Iterm =
+
+
+˙Iterm1
+˙Iterm2
+˙Iterm3
+
+ (20)
+10
+
+=== PAGE 11 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+• Norton or compensation currents:
+˙Icomp =
+
+
+˙Icomp1
+˙Icomp2
+˙Icomp3
+
+ (21)
+• Linear currents:
+˙Ilinear =
+
+
+˙Ilinear1
+˙Ilinear2
+˙Ilinear3
+
+ (22)
+The normal power ﬂow solution technique in OpenDSS is based on the Equation 23.
+˙I = ¯Ysystem× ˙V (23)
+Where:
+• ˙I: Injected current array;
+• ˙V: System voltage array.
+OpenDSScomputesthecompensationcurrentsfromeachPCelementtopopulatetheinjectedcurrent
+array. Therefore, the main purpose of this section is to understand how OpenDSS calculates the
+compensation currents for PVSystem. It means:˙Icomp1, ˙Icomp2 and ˙Icomp3
+Firstly, it is possible by means of Kirchhoﬀ’s ﬁrst law to express the compensation currents in function
+of the linear and terminal currents, as presented in Equation 24.
+
+
+˙Icomp1
+˙Icomp2
+˙Icomp3
+
+ =
+
+
+˙Iterm1
+˙Iterm2
+˙Iterm3
+
+ +
+
+
+˙Ilinear1
+˙Ilinear2
+˙Ilinear3
+
+ (24)
+The linear currents can be written as a function of the nodal voltages, Equation 25, and the terminal
+currents as a function of both the three-phase apparent power provided by the PVSystem ,¯S3φ, and
+the nodal voltages, Equation 26. (It is assumed that PVSystem operates with constant power).
+
+
+˙Ilinear1
+˙Ilinear2
+˙Ilinear3
+
+ =
+
+
+¯Ylinear 0 0
+0 ¯Ylinear 0
+0 0 ¯Ylinear
+
+.
+
+
+˙V1
+˙V2
+˙V3
+
+ (25)
+
+
+˙Iterm1
+˙Iterm2
+˙Iterm3
+
+ =
+
+
+¯S∗
+3φ
+3 0 0
+0
+¯S∗
+3φ
+3 0
+0 0
+¯S∗
+3φ
+3
+
+
+.
+
+
+1/ ˙V∗
+1
+1/ ˙V∗
+2
+1/ ˙V∗
+3
+
+ (26)
+11
+
+=== PAGE 12 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+The Norton or linear admittance, ¯Ylinear, is calculated using the apparent power provided by the
+element, according to Equation 27.
+¯Ylinear =
+¯S∗
+3φ
+V 2
+n
+(27)
+Where:
+•Vn corresponds the rated voltage of the PVSystem.
+The ﬁnal expression for the calculation of the compensation currents, therefore, is presented in
+Equation 28.
+
+
+˙Icomp1
+˙Icomp2
+˙Icomp3
+
+ =
+
+
+¯S∗
+3φ
+3 0 0
+0
+¯S∗
+3φ
+3 0
+0 0
+¯S∗
+3φ
+3
+
+
+.
+
+
+1/ ˙V∗
+1
+1/ ˙V∗
+2
+1/ ˙V∗
+3
+
+ +
+
+
+¯S∗
+3φ
+V 2
+n
+0 0
+0
+¯S∗
+3φ
+V 2
+n
+0
+0 0
+¯S∗
+3φ
+V 2
+n
+
+
+.
+
+
+˙V1
+˙V2
+˙V3
+
+ (28)
+The compensation currents are calculated as shown above if two conditions are satisﬁed. First, the
+model property of the PVSystem is set equal to1, the default OpenDSS value for constant power
+operation. And second, each nodal voltage has to be in the range deﬁned by theVminpu and Vmaxpu
+properties, which by default are 0.9 and 1.1, respectively. Outside this range, the corresponding
+phase of the element is modeled as constant impedance.
+2 OpenDSS InvControl Element Model
+The functionality of inverters modeled in OpenDSS can be separated into two groups. The ﬁrst
+consists of the functionalities modeled on the PC element itself, PVSystem and Storage2. And the
+second has the features that are modeled on the OpenDSS InvControl element, the ones described
+in this section.
+This separation is made due to the nature of the functionalities fromthepoint of view of the OpenDSS
+simulation process. The functions of the ﬁrst group are able to change the output power value of
+the PC element without the need for any power ﬂow result and therefore they need just one control
+iteration of the control loop. On the other hand, the functions of the second group need a power ﬂow
+result to then check whether or not it is necessary to perform a control action (change the output
+power of the PC element) and this is done through the control loop.
+For InvControl, voltages are sampled to check if any control action is required. These voltages may
+be the terminal or nodal voltages of the PC element or, alternatively, the line-to-line or line-to-
+ground voltages of a monitored bus or buses. In the description of the following properties, the
+term monitored voltage refers to the voltage chosen by means of one of the 2 options above. The
+subsection 2.4 presents a more detailed explanation of how the monitored voltage is calculated.
+12
+
+=== PAGE 13 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+To use the InvControl element it is necessary to deﬁne two sets of properties, the ﬁrst one corresponds
+to the properties that are common to all the smart functions, and the second one corresponds to the
+properties speciﬁc to each smart function, with can be either Reactive CONTROL, Active LIMIT or
+both.
+2.1 Common properties
+The common properties that need to be deﬁned in InvControl are listed below:
+• DERList: Array list of PVSystem and/or Storage2 elements to be controlled. If not speciﬁed,
+all PVSystem and Storage2 in the circuit are assumed to be controlled by this control;
+• mode: Smart inverter function in which the InvControl will control the PC elements speciﬁed
+in DERList, according to the options below:
+–VOLTVAR: Smart inverter volt-var function. This mode attempts to CONTROL the vars,
+according to one or two volt-var curves, depending on the monitored voltages, present
+active power output, and the capabilities of the PC element;
+–VOLTWATT: Smart inverter volt-watt function. This mode attempts to LIMIT the watts,
+according to one deﬁned volt-watt curve, depending on the monitored voltages and the
+capabilities of the PC element;
+–DYNAMICREACCURR:SmartinverterDynamicReactiveCurrent(DRC)function. This
+mode attempts to increasingly counter deviations by CONTROLLING vars, depending
+on the monitored voltages, present active power output, and the capabilities of the PC
+element;
+–WATTPF: Smart inverter watt-pf function. This mode attempts to CONTROL the vars,
+according to a watt-pf curve, depending on the present active power output, and the
+capabilities of the PC element;
+–WATTVAR: Smart inverter watt-var function. This mode attempts to CONTROL the
+vars, according to a watt-var curve, depending on the present active power output, and
+the capabilities of the PC element;
+• Combimode: Combination of smart inverter functions in which the InvControl will control the
+PC elements inDERList, according to the options below:
+–VV_VW: Smart inverter volt-var and volt-watt function;
+–VV_DRC: Smart inverter volt-var and DRC function.
+• voltage_curvex_ref: Base voltage that is considered to calculate the monitored voltage inpu,
+the options are listed below:
+–rated: It uses as base voltage the rated voltage of the controlled element;
+–avg: It uses an average value as the base voltage. This average value is calculated using
+the monitored voltage values of previous time steps that are stored in a moving window.
+This window has a length in units of time, deﬁned in theavgwindowlen;
+13
+
+=== PAGE 14 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+–ravg: It uses as base voltage the rated voltage of the controlled element. However, the
+value that is used to calculate the monitored voltage inpu is the average value of the
+moving window described in optionavg.
+• avgwindowlen: The time length of the averaging window;
+• VoltageChangeTolerance: Tolerance in pu of the control loop convergence associated to the
+monitored voltage inpu. This value is compared with the diﬀerence of the monitored voltage
+in pu of the current and previous control iterations of the control loop;
+• RateofChangeMode: Auxiliary option that aims to limit the changes of the desired reactive
+power and the active power limit between time steps, the alternatives are listed below:
+–INACTIVE: It indicates there is no limit on rate of change imposed for either active or
+reactive power output;
+–LPF: A low-pass RC ﬁlter is applied to the desired reactive power and/or the active
+power limit to determine the output power as a function of a time constant deﬁned in the
+LPFTau property;
+–RISEFALL: A rise and fall limit in the change of active and/or reactive power expressed
+in terms ofpu power per second, deﬁned in theRiseFallLimit, is applied to the desired
+reactive power and/or the active power limit.
+• RiseFallLimit: Limit in pu power per second used by the RISEFALL option of the Rate-
+ofChangeMode property. The base value for this ramp is deﬁned in theRefReactivePower
+property and/or inVoltwattYAxis;
+• LPFTau: Filter time constant of theLPF option of theRateofChangeModeproperty. The time
+constant will cause the low-pass ﬁlter to achieve 95% of the target value in 3 time constants.
+• monBus: Array list of monitored buses with their nodes;
+• monBusesVbase: Array list of rated voltages of the buses and their nodes presented in the
+monBus property. This list may have diﬀerent line-to-line and/or line-to-ground voltages;
+• monVoltageCalc: Calculation options for monitored voltage inV. These options can be applied
+to the nodal voltages of the controlled element or to the list of voltages of the buses deﬁned in
+the propertymonBus:
+–AVG: Calculates the mean of the voltages;
+–MAX: Stores the maximum voltage;
+–MIN: Stores the minimum voltage.
+Considering that the list of voltages of the buses deﬁned inmonBus may present values with
+diﬀerent magnitudes, the list that is actually used in this step corresponds to the list that
+presents its Volts values based on the same base voltage, which is the rated voltage of the
+controlled element. Step 3 of subsection 2.4 presents this process in more details.
+14
+
+=== PAGE 15 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+2.2 Properties of functions that CONTROL reactive power
+The functions that control reactive power of the controlled element have in common a property
+that deﬁnes the base reactive power and two that are associated with the control loop convergence.
+These functions are volt-var, DRC, watt-pf, watt-var, volt-watt combined with volt-var and volt-var
+combined with DRC.
+• RefReactivePower: Deﬁnes the base reactive power for both the provided and absorbed reactive
+power, according to one of the following options:
+–VARAVAL: The base values for the provided and absorbed reactive power are equal to
+the available reactive power;
+–VARMAX: The base values of the provided and absorbed reactive power are equal to the
+value deﬁned in thekvarMax and kvarMaxAbs properties, respectively.
+• VarChangeTolerance: Tolerance inpu of the convergence of the control loop associated with
+reactive power. For the same control iteration, this value is compared to the diﬀerence between
+the desired reactive power value inpu with the output reactive power inpu of the controlled
+element;
+• deltaQ_factor: Maximum change inpu from the prior reactive output power to the desired
+reactive output power during each control iteration. If it is not set or set equal−1, OpenDSS
+will use its automatic convergence algorithm.
+2.2.1 Properties of smart inverter volt-var function
+The following list shows the properties that should be set when the volt-var function is enabled
+through one of the ensuing three modes:VOLTVAR, VV_VW or VV_DRC.
+• vvc_curve1: Name of the XYCurve object containing the volt-var curve. The positive values
+of they axis of the volt-var curve represent values inpu of the provided base reactive power.
+The negative values of the axisy, are values inpu of the absorbed base reactive power. Those
+deﬁned in theRefReactivePower property;
+2.2.2 Properties of smart inverter DRC function
+The following list shows the properties that should be set when the DRC function is enabled through
+one of the ensuing two modes:DYNAMICREACCURR or VV_DRC.
+• DbvMin: The per-unit voltage lower limit of the deadband of the DRC function. When the
+monitored voltage is within this deadband, no reactive power can be provided or absorbed;
+• DbvMax: The per-unit voltage upper limit of the deadband of the DRC function. When the
+monitored voltage is within this deadband, no reactive power can be provided or absorbed;
+• ArGraLowV: Ratio between the reactive power provided or absorbed and the diﬀerence between
+the monitored voltage and the average voltage of the averaging window of the DRC function.
+This rate is applied when the monitored voltage is less thanDbvMin;
+15
+
+=== PAGE 16 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+• ArGraHiV: Ratio between the reactive power provided or absorbed and the diﬀerence between
+the monitored voltage and the average voltage of the averaging window of the DRC function.
+This rate is applied when the monitored voltage is greater thanDbvMax;
+• DynReacavgwindowlen: The time length of the averaging window of the DRC function.
+2.2.3 Properties of smart inverter watt-pf function
+The following list shows the properties that should be set when the watt-pf function is enabled
+through the mode:WATTPF.
+• wattpf_curve: Name of the XYCurve object containing the watt-pf curve. The positive values
+of they axis of the watt-pf curve represent that the output reactive power calculated is in the
+same direction of the output active power. The negative values of the axisy represent that the
+output reactive power calculated is in opposite direction of the output active power;
+2.2.4 Properties of smart inverter watt-var function
+The following list shows the properties that should be set when the watt-pf function is enabled
+through the mode:WATTVAR.
+• wattvar_curve: Name of the XYCurve object containing the watt-var curve. The positive
+values of they axis of the watt-var curve represent values inpu of the provided base reactive
+power. The negative values of the axisy, are values inpu of the absorbed base reactive power.
+Those deﬁned in theRefReactivePower property;
+2.3 Properties of functions that LIMIT active power
+The functions that limit the active power of the controlled element have two properties in common
+that are associated with the convergence of the control loop. The functions that limit active power
+are volt-watt and volt-watt combined with volt-var.
+• ActivePChangeTolerance: Tolerance inpuof the convergence of the control loop associated with
+active power. For the same control iteration, this value is compared to the diﬀerence between
+the active power limit inpu resulted from the convergence process and the one resulted from
+the volt-watt function;
+• deltaP_factor: Maximum change inpu from the prior active power limit to the one resulted
+from the volt-watt curve during each control iteration. If it is not set or set equal−1, OpenDSS
+will use its automatic convergence algorithm.
+2.3.1 Properties of smart inverter volt-watt function
+The following list shows the properties that should be set when the volt-watt function is enabled
+through one of the ensuing two modes:VOLTWATTor VV_VW.
+16
+
+=== PAGE 17 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+• voltwatt_curve: Name of the XYCurve object containing the volt-watt curve;
+• VoltwattYAxis: Deﬁnes they axis inpu of the volt-watt curve. The options for this property
+are listed below:
+–PMPPPU: They axis corresponds to the value inpu of Pmpp property of the PVSystem;
+–PAVAILABLEPU: They axis corresponds to the value inpu of the available active power
+of the PVSystem;
+–PCTPMPPPU: They axis corresponds to the value inpu of the powerPmpp multiplied
+by 1
+100 of the%Pmpp property of the PVSystem;
+–KVARATINGPU: They axis corresponds to the value inpu of thekVA property of the
+PVSystem.
+2.4 InvControl operation in the control loop
+This section shows the operation of the control loop when only one InvControl is the control element
+in the circuit.
+Figure 8 shows the block diagram of the control loop and as can be seen there are no delayed control
+actions when only InvControl elements are considered.
+The operation of InvControl is described for the time stept and control iterationj. The following
+are the main steps in the control loop that are described:
+1. Step 1: Power Flow;
+2. Step 2: Sample the Control Elements;
+3. Step 3: Control Actions fort Done?;
+4. Step 4: Execute Control Actions fort.
+Step 1: Power Flow To perform the power ﬂow, OpenDSS calculates the PC compensation
+currents of the PC elements using their powers. Therefore, the active power,Pac[t]j, and reactive
+power,Qac[t]j, of the PVSystem element are calculated according to the six steps described in 1.2.1.
+As a result of the power ﬂow, all system voltages are calculated.
+Step 2: Sample the Control ElementsThe InvControl samples voltages that are used to verify
+the need for a control action. If this is the case, InvControl includes this action in the control list.
+The processes performed in this step are presented in the following items:
+•Calculation of the monitored voltage in Volts
+The voltages sampled by InvControl can be the nodal voltages of the controlled element or
+line-to-line and/or line-to-ground voltages of monitored bus or buses.
+17
+
+=== PAGE 18 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+Initialize time stept
+j = 1
+Power Flow
+j > jmax
+Sample the Control Elementsj =j + 1 Control Queue
+Control
+Actions fort
+Done?
+Execute Control Actions fort
+Solution done
+for t
+Aborted
+process
+Control actions fort
+and
+Delayed control actions
+Yes
+No
+Control actions fort
+Yes
+No
+Figure 8: Block diagram of the control loop when onlyInvControl elements are considered
+By default the InvControl samples the nodal voltages of the controlled element. For example,
+for a three-phase element, the voltages monitored inV can be written according to Equation 29.
+[Vmon1[t]j , Vmon2[t]j , Vmon3[t]j] (29)
+In order to sample voltages of monitored bus or buses, themonBus and monBusesVbase prop-
+erties of InvControl must be used. ThemonBus property stores the monitored buses and their
+nodes deﬁned in a list and themonBusesVbase property stores the list with the correspond-
+ing base voltages for each of these monitored buses. For instance, Equation 30 shows the list
+with two monitored voltages (resulted from power ﬂow) and Equation 31 the list with their
+respective base voltages.
+[VmonBusA1[t]j , VmonBusB12[t]j] (30)
+18
+
+=== PAGE 19 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+[Vbase1 , Vbase2] (31)
+Where:
+–VmonBusA1[t]j corresponds to the line-to-ground voltage of the node1 of the busA;
+–VmonBusB12[t]j corresponds to the line-to-line voltage between the nodes1 and 2 of the bus
+B.
+The values of the voltages of Equation 30 can present base voltages with distinct values and
+therefore, this list must have its values corrected to the same base voltage, which correspond
+to the rated voltage of the controlled element, as presented in Equation 32. This is necessary
+so that the calculation of the monitored voltage inV is made considering voltages of the same
+order of magnitude.
+[VmonBusA1[t]j× Velementbase
+Vbase1
+, VmonBusB12[t]j× Velementbase
+Vbase2
+] (32)
+Where:
+–Velementbase corresponds to the rated voltage of the controlled element which is thekV
+property value of thePVSystem.
+A unique monitored voltage inV is calculated from one of the two lists present in Equations
+29 or 32. The options for this selection are present in themonVoltageCalc property and are
+applied in the list to calculate the maximum, minimum or average value, according to the
+options described below:
+–ForAVG, the average monitored voltage is calculated by applying the mean in the list;
+–ForMAX, the monitored voltage is the maximum value present in the list;
+–ForMIN, the monitored voltage is the minimum value present in the list.
+Thus, as a result, the monitored voltage inV is deﬁned asVmon[t]j.
+•Calculation of the per-unit monitored voltage
+The monitored voltage inpu, vmon[t]j, applied to the smart inverter volt-var and volt-watt
+functions, is calculated using the monitored voltage inV, Vmon[t]j, through one of the options
+in thevoltage_curvex_ref property shown below:
+–Forrated, the monitored voltage inpu is calculated according to Equation 33.
+vmon[t]j = Vmon[t]j
+Velementbase
+(33)
+–Foravg, the monitored voltage inpu is calculated according to Equation 34.
+vmon[t]j = Vmon[t]j
+Vmonavg[t] (34)
+19
+
+=== PAGE 20 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+–Forravg, the monitored voltage inpu is calculated according to Equation 35.
+vmon[t]j = Vmonavg[t]
+Velementobase
+(35)
+Where:
+–Vmonavg[t] is the mean value of the monitored voltages inpu of the previousm time steps
+thatcanbestoredinthemovingwindowwithlengthdeﬁnedinthe avgwindowlen property,
+as can be seen in Equation 36.
+Vmonavg[t] = 1
+m×
+m∑
+k=1
+vmon[t−k]j (36)
+For instance, an averaging window with three time step length,Vmonavg[t] is calculated
+according to Equation 37.
+Vmonavg[t] = 1
+3× (Vmonavg[t− 1] +Vmonavg[t− 2] +Vmonavg[t− 3]) (37)
+For smart inverter DRC functions, the monitored voltage inpu is always calculated according
+to Equation 38.
+vmondrc[t]j = Vmon[t]j
+Velementobase
+(38)
+•Calculation of the output active power desired in puThe smart inverter functions watt-
+pf and watt-var do not depend on any voltage to operate, instead they just need the output
+active power desired. The output active power desired is the power that the inverter would
+provide or absorb if kVA rating of the inverter is not exceed. For the PVSystem, it is calculated
+as shown in the Equation 39
+Pdesired[t] =
+
+
+
+0, if the inverter status is OFF
+PLimitMin[t], if Pdc[t]×EffCurve ≥PLimitMin[t]
+Pdc[t]×EffCurve, otherwise
+(39)
+Where: PLimitMin[t] = %Pmpp×Pmpp
+100
+The base active power value used for those functions is the rated active power in which for the
+PVSystem is the Pmpp, according to the Equation 40
+pdesired[t] = Pdesired[t]
+Pmpp (40)
+20
+
+=== PAGE 21 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+•Checking the need for control action
+If the convergence criteria of the InvControl are satisﬁed, no control action is sent to the control
+list in the current iteration,j. However, for the ﬁrst control iteration,j = 1, always the action
+is sent, so the criteria given below are only valid forj >1.
+Voltage convergence criterion The voltage criterion is performed by comparing the mon-
+itored voltage inpu between the control iterationsj and j− 1, according to Equation 41.
+vmon[t]j−vmon[t]j−1 <ξ v (41)
+If the DRC function is selected, the Equation 42 presents the convergence criterion that needs
+to be satisﬁed.
+vmondrc[t]j−vmondrc[t]j−1 <ξ v (42)
+Where ξv corresponds to the tolerance deﬁned in theVoltageChangeToleranceproperty.
+If the combined volt-var and DRC function is enabled, both the criterion of Equation 41 and
+Equation 42 must be satisﬁed.
+Reactive power convergence criterion The convergence criterion for reactive power is
+performed by comparing the desired reactive power inpu, qDend[t]j, and the reactive power in
+pu of the controlled element, both from the control iterationj, as Equation 43.
+⏐⏐⏐⏐qDend[t]j− Qac[t]j
+Qbase[t]j−1
+⏐⏐⏐⏐<ξ q if Qbase[t]j−1≥ 0 (43)
+⏐⏐⏐⏐qDend[t]j− Qac[t]j
+Qbaseneg[t]j−1
+⏐⏐⏐⏐<ξ q if Qbase[t]j−1 < 0 (44)
+Where:
+–ξq corresponds to the tolerance deﬁned in theVarChangeToleranceproperty;
+–qDend[t]j is discussed in the Equation 75 of Step 4;
+–Qbase[t]j−1 and Qbaseneg[t]j−1 are the base reactive power values for the provided and ab-
+sorbed reactive powers from the previous control iteration,j− 1, respectively. The calcu-
+lation of these values is presented in Step 4.
+Active power convergence criterion The convergence criterion for active power is per-
+formed by comparing the active power limit inpu, pLend[t]j, with the active power limit inpu
+which is the result of the convergence process, according to Equation 45.
+21
+
+=== PAGE 22 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+⏐⏐⏐⏐
+PLimit[t]j
+Pbase[t]j−1
+−pLend[t]j
+⏐⏐⏐⏐<ξ p (45)
+Where:
+–ξp corresponds to the tolerance deﬁned in theActivePChangeToleranceproperty;
+–pLend[t]j is discussed in the Equation 74 of Step 4;
+–Pbase[t]j−1 is the base active power value from the provius control iteration,j− 1. The
+calculation of these values is presented in Step 4.
+It is important to notice that this comparison does not use the output active value of the
+controlled element. The reason is that the nature of the volt-watt function is to set an active
+power limit instead of a desired value. Therefore, the convergence criterion for active power
+could be satisﬁed with an output active power of the controlled element less than the active
+power limit set by the volt-watt function.
+Step 3: Control Actions fort Done? The control loop converges for a time stept when there
+is no control action in the control list for this time step. Otherwise, the process proceeds to Step 4
+described below.
+Step 4: Execute Control Actions for t The control action for InvControl is performed by
+changing the reactive power and/or limiting the active power of the PVSystem. The items performed
+in this step are described below:
+•Calculation of base values of power
+Two base values of reactive power are deﬁned, one used when the reactive power is positive or
+provided. And another, when the reactive power is negative or absorbed. These values depend
+on the options of theRefReactivePower property as shown below:
+–ForVARMAX, the base values of reactive power are calculated according to Equation 46
+and Equation 47 to be used when the reactive power is positive (capacitive) and negative
+(inductive), respectively.
+Qbase[t]j =kvarMax (46)
+Qbaseneg[t]j =kvarMaxAbs (47)
+–ForVARAVAL, both base values are calculated according to Equation 48.
+Qbase[t]j =Qbaseneg[t]j =
+√
+kVA 2−P 2
+ac[t]j (48)
+If Qbase[t]j calculated above results in 0, thenQbase[t]j is set to be equal tokvarMax.
+22
+
+=== PAGE 23 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+The base value of active power depends on the options of theVoltwattYAxisproperty as shown
+below:
+–ForPMPPPU, the base value is equal to thePmpp property of the PVSystem, as can be
+seen in the Equation 49.
+Pbase[t]j =Pmpp (49)
+–For PAVAILABLEPU, the base value corresponds to the available active power of the
+PVSystem in the time stept, which is calculated according to Equation 50.
+Pbase[t]j =Pdc[t]×EffCurve (50)
+WherePdc[t] =Pmpp×irradiance×irradiance[t]×PTCurve (Temperature [t]), as shown
+in Equation 1.
+–ForPCTPMPPPU, the base value is calculated according to Equation 51.
+Pbase[t]j = %Pmpp×Pmpp
+100 (51)
+–For KVARATING, the base value corresponds to the kVA rating of the inverter, as can
+be seen in the Equation 52.
+Pbase[t]j =kVA (52)
+•Calculation of the smart inverter function
+The goal of this item is to calculate the desired reactive power,qDfun [t]j, and/or the active
+power limit,pLfun[t]j, according to the modes below:
+Smart Inverter volt-var FunctionFor the smart inverter volt-var function, the monitored
+voltage inpu is applied ,vmon[t]j, in the volt-var curve deﬁned in thevvc_curve1 property to
+obtain the desired reactive power value inpu,qDfun [t]j. The Figure 9 below shows an example
+of an user-deﬁned volt-var curve.
+The desired reactive power inpu can be written according to Equation 53.
+qDfun [t]j =fvv(vmon[t]j) (53)
+Smart inverter DRC function For the smart inverter DRC function, the desired reactive
+power value is set according to Equation 54.
+23
+
+=== PAGE 24 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+vmon (pu)
+q+ (pu)
+q− (pu)
+v1 v2 v3 v41.00
+1
+−1
+Figure 9: volt-var curve
+qDfun [t]j =
+
+
+
+−∆vmondrc[t]j×ArGraLowV if vmondrc[t]j <DbvMin
+−∆vmondrc[t]j×ArGraHiV if vmondrc[t]j >DbvMax
+0, otherwise
+(54)
+Where the voltage diﬀerence is calculated according to Equation 55.
+∆vmondrc[t]j =vmondrc[t]j−vwindowdrc[t]j (55)
+Andvwindowdrc[t]j corresponds to the mean of the voltages of the averaging window of the DRC
+function. This average voltage is calculated according to Equation 56 considering that the
+averaging window is capable of storing the voltages ofm previous time steps. The time-scale
+length of this window is set in theDynReacavgwindowlen property.
+vwindowdrc[t]j = 1
+m×
+m∑
+k=1
+vmondrc[t−k]j (56)
+Combined Smart inverter volt-var and DRC functionFor the combined mode of the
+smart volt-var and DRC functions, the desired reactive power value is the sum of the result of
+Equation 53 and Equation 54, according to Equation 57.
+qDfun [t]j =fvv(vmon[t]j) +
+
+
+
+−∆vmondrc[t]j×ArGraLowV if vmondrc[t]j <DbvMin
+−∆vmondrc[t]j×ArGraHiV if vmondrc[t]j >DbvMax
+0, otherwise
+(57)
+24
+
+=== PAGE 25 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+Smart inverter volt-watt function For the smart inverter volt-watt function, the mon-
+itored voltage inpu is applied,vmon[t]j, in the volt-watt curve deﬁned in thevoltwatt_curve
+property to obtain the active power limit value inpu,pLfun[t]j. The Figure 10 shows an example
+of an user-deﬁned volt-watt curve.
+vmon (pu)
+p (pu)
+v1 v2
+1
+Figure 10: volt-watt curve
+The active power limit value inpu is calculated as shown in the Equation 58.
+pLfun[t]j =fvw(vmon[t]j) (58)
+Smart inverter watt-pf functionFor the smart inverter watt-pf function, the output active
+power inpu is applied,pdesired[t], in the watt-pf curve deﬁned in thewattpf_curve property to
+obtain the power factor, Equation 59, and then calculate the desired reactive power value in
+pu, qDfun [t]j, according to Equation 60. The Figure 11 shows an example of an user-deﬁned
+watt-pf curve.
+pfDfun [t]j =fwpf(pdesired[t]) (59)
+qDfun [t]j =pdesired[t]×
+√
+1
+pfDfun [t]2
+j− 1×signal(pfDfun [t]j) (60)
+One can notice that the watt-pf curve, Figure 11, has the nominal/reference point in power
+factor 1 instead of 0. As a result, the user needs to deﬁne this watt-pf curve based on a curve
+that has its reference in power factor equal to 0, according the Figure 12. The discontinuity in
+p2 is not a problem due to the reactive power is zero for either power factor equal 1 or -1.
+In order to deﬁne the this watt-pf curve, the user needs to calculate thep2, and include the
+coordinates (p2, 1) and (p2, -1) into the OpenDSS XYcurve object.
+25
+
+=== PAGE 26 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+pdesired (pu)
+pf+
+pf−
+p1 p3p2
+0.98
+−0.98
+1
+Figure 11: watt-pf curve
+pdesired (pu)
+pf+ (pu)
+pf− (pu)
+p1 p3p2
+0.98
+−0.98
+−1
+1
+Figure 12: watt-pf curve with reference in zero
+Smart inverter watt-var function For the smart inverter watt-var function, the output
+active power inpu is applied, pdesired[t], in the watt-var curve deﬁned in thewattvar_curve
+property to obtain the desired reactive power value inpu, qDfun [t]j, according to Equation 61.
+The Figure 13 shows an example of an user-deﬁned watt-var curve.
+qDfun [t]j =fwv(pdesired[t]) (61)
+•Checking auxiliary options
+The auxiliary options that can be selected are intended to limit the variations of the active
+power limit and/or the desired reactive power during time steps. As a result of this veriﬁcation,
+pLopc[t]j and qDopc[t]j are deﬁned.
+26
+
+=== PAGE 27 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+pdesired (pu)
+q+ (pu)
+q− (pu)
+p1 p2
+0.2
+−1
+Figure 13: watt-var curve
+Standard The standard option (default) does not limit the variation of the active power limit
+and the desired reactive power, as can be seen in the Equation 62 and Equation 63.
+pLopc[t]j =pLfun[t]j (62)
+qDopc[t]j =qDfun [t]j (63)
+In this version of the model, the watt-pf and watt-var functions do not have the auxiliary
+options implemented. Therefore, the Equation 62 and Equation 63 are applied.
+LPF This option consists of applying the active power limit,pLfun[t]j, and/or the desired
+reactive power,qDfun [t]j, as input of a ﬁrst-order low pass ﬁlter with time constant equal toτ.
+As a result, the values of the options are set according to Equations 64 and 65. These equations
+present as initial conditions the results of these equations in the previous time step,pLopc[t− 1]
+and qDopc[t− 1]
+pLopc[t]j =pLfun[t]j× (1−e−t
+τ ) +pLopc[t− 1]×e−t
+τ (64)
+qDopc[t]j =qDfun [t]j× (1−e−t
+τ ) +qDopc[t− 1]×e−t
+τ (65)
+Where τ is the value set in theLPFTau property.
+27
+
+=== PAGE 28 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+RF This option limits the change of the active power limit and the desired reactive power
+between time steps to a maximum value. Equations 66 and 67 present the application of this
+option.
+pLopc[t]j =
+
+
+
+pLopc[t− 1] + ∆p
+∆tRF× ∆t, if (pLfun[t]j−pLopc[t− 1])> ∆p
+∆tRF× ∆t
+pLopc[t− 1]− ∆p
+∆tRF× ∆t, if (pLfun[t]j−pLopc[t− 1])<− ∆p
+∆tRF× ∆t
+pLfun[t]j, otherwise
+(66)
+qDopc[t]j =
+
+
+
+qDopc[t− 1] + ∆q
+∆tRF× ∆t, if qDfun [t]j−qDopc[t− 1]> ∆q
+∆tRF× ∆t
+qDopc[t− 1]− ∆q
+∆tRF× ∆t, if qDfun [t]j−qDopc[t− 1]<− ∆q
+∆tRF× ∆t
+qDfun [t]j, otherwise
+(67)
+Where:
+–∆p
+∆tRF
+and ∆q
+∆tRF
+are the value set in theRiseFallLimit property;
+–∆t is the stepsize of the QSTS simulation. In other words, it corresponds to the diﬀerence
+between two consecutive time steps,t and t− 1, in a time scale.
+•Checking inverter limits
+The convergence process must use values that respect the limits presented in the modeling of
+the PC element, in this sense, the values of the active power limit and the desired reactive power
+are calculated considering the restrictions of the inverter. As a result of this check,pLlim[t]j
+and qDlim[t]j are deﬁned.
+Equation 68 presents the calculation for the mode that have the smart inverter volt-watt func-
+tion.
+pLlim[t]j = min
+(√
+kVA 2−Q2
+ac[t]j
+Pbase[t]j
+, %Pmpp×Pmpp
+100×Pbase[t]j
+)
+(68)
+For modes that have the smart inverter volt-var, DRC, watt-pf or watt-var functions, the
+checking the inverter limits depends of the options of theRefReactivePower property, as can
+be seen below:
+–ForVARMAX, the calculation of the reactive power limit of the inverter is performed by
+means of Equation 69 when the inverter is conﬁgured to give priority to active power.
+qDlim[t]j =
+
+
+
+min
+(√
+kVA 2−P 2
+ac[t]j
+Qbase[t]j
+,|QLimit[t]j|
+Qbase[t]j
+)
+if qDopc[t]j > 0
+min
+(√
+kVA 2−P 2
+ac[t]j
+Qbaseneg[t]j
+,|QLimitneg[t]j|
+Qbaseneg[t]j
+)
+if qDopc[t]j < 0
+(69)
+28
+
+=== PAGE 29 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+On the other hand, with priority for reactive power, the calculation follows Equation 70.
+qDlim[t]j =
+
+
+
+|QLimit[t]j|
+Qbase[t]j
+if qDopc[t]j > 0
+|QLimitneg[t]j|
+Qbaseneg[t]j
+if qDopc[t]j < 0
+(70)
+For watt-pf function, besides the two priority options above, it can also have power factor
+priority, as shown in Equation 71
+qDlim[t]j =
+
+
+
+kVA×
+√
+1−pfDfun [t]2
+j
+Qbase[t]j
+if qDopc[t]j > 0
+kVA×
+√
+1−pfDfun [t]2
+j
+Qbaseneg[t]j
+if qDopc[t]j < 0
+(71)
+–For VARAVAL, the calculation of the reactive power limit is also performed using Equa-
+tion 70. The watt-pf function does not have this option, it always works withVARMAX.
+Where|QLimit[t]j| and|QLimitneg[t]j| are calculated in Step 5 of subsubsection 1.2.1.
+•Calculation of ﬁnal/end values for the convergence process
+In order to deﬁne the most restrictive values to be used in the convergence process. The ﬁnal
+values of the active power limit and the desired reactive power are calculated according to
+Equation 72 and Equation 73, respectively.
+pLend[t]j = min (qDopc[t]j,qDlim[t]j) (72)
+qDend[t]j = min (qDopc[t]j,qDlim[t]j)×signal(qDopc[t]j) (73)
+•Convergence process
+The values calculated in the Equations 72 and 73 are not directly applied to set the new active
+power limit and/or desired reactive power of the PVSystem. The reason is trying to avoid
+instability in the convergence process. Therefore, Equations 74 and 75 present the values in
+kW andkvar of the active power limit and the desired reactive power that are used to update
+the values of the controlled element.
+PLimit[t]j =Pac[t]j + (pLend[t]j×Pbase[t]j−Pac[t]j)× ∆P (74)
+QDesired[t]j =
+{
+Qac[t]j + (qDend[t]j×Qbase[t]j−Qac[t]j)× ∆Q if qDend[t]j≥ 0
+Qac[t]j + (qDend[t]j×Qbaseneg[t]j−Qac[t]j)× ∆Q if qDend[t]j < 0 (75)
+Where:
+29
+
+=== PAGE 30 ===
+August 17, 2020
+Paulo Radatz, Celso Rocha, Wes Sunderman, Matthew Rylander, and Jouni Peppanen
+–∆P corresponds to the value set in thedeltaP_factor property;
+–∆Q corresponds to the value set in thedeltaQ_factor property.
+However, if the user wants that OpenDSS takes care of∆P and/or ∆Q values itself, the user
+can deﬁne them as−1 or just not deﬁne any value for them.
+Since the watt-pf and watt-var functions do not have problems with instability in the conver-
+gence process, the∆P and/or ∆Q are set equal to 1.
+•Updates the powers of the PVSystem element
+The six steps described in subsubsection 1.2.1 are performed again, however, in Step 3 the
+active power limit value, PLimit[t]j, is considered, and, in Step 4, the value of the desired
+reactive power,Q′
+ac, is the value ofQDesired[t]j.
+Then, the control iterationj + 1 starts in the ﬁrst step of the control loop, which is the power
+ﬂow.
+30
+

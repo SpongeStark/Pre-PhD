@@ -1,5 +1,6 @@
-! 1. MPPT Flat Efficiency Curve (eta_mppt = 0.99)
-New "XYCurve.mppt_eff" npts=4 xarray=[0.1 0.2 0.5 1.0] yarray=[0.99 0.99 0.99 0.99]
+! 1. MPPT Inverter Efficiency Curve (Delta M88H-121: Peak 98.8%, Euro 98.5%)
+New "XYCurve.mppt_eff" npts=4 xarray=[0.1 0.2 0.5 1.0] yarray=[0.965 0.980 0.988 0.985]
 
-! 2. Solar PV System on Common Bus (n_pv)
-New "PVSystem.pv_1" phases=3 bus1=n_pv.1.2.3 kv=0.23 kVA=20.0 Pmpp=20.0 EffCurve=mppt_eff kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 ControlMode=GFL daily=solar_shape
+! 2. Solar PV System on Common Bus (3 x Delta M88H Inverters Aggregated)
+! Supports active power clipping (210 kW) + reactive PF compensation (up to 126 kvar)
+New "PVSystem.pv_1" phases=3 bus1=n_pv.1.2.3 kv=0.40 kVA=210.0 Pmpp=270.0 %Pmpp=100.0 %Cutin=0.21 %Cutout=0.10 EffCurve=mppt_eff kvarMax=126.0 kvarMaxAbs=126.0 kvar=0.0 VarFollowInverter=No ControlMode=GFL WattPriority=Yes daily=solar_shape duty=solar_shape

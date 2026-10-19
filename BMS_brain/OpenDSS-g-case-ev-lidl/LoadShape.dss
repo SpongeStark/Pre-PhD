@@ -2,11 +2,11 @@
 ! LoadShape.dss - Case 2: Lidl EV Charging Stations (c_ev)
 ! --------------------------------------------------------------------------
 
-! 1. Target Demand Profile (Lidl commercial retail EV charging stations (c_ev))
-New "LoadShape.target_load_shape" npts=24 interval=1.0 mult=[0.0826 0.0550 0.0395 0.0285 0.0219 0.0282 0.0448 0.0953 0.4481 0.8597 0.9226 0.9279 1.0000 0.6154 0.6669 0.5933 0.6428 0.6865 0.6820 0.3756 0.3047 0.2649 0.2154 0.1461]
+! 1. Target Demand Profile (Lidl commercial EV charging hub (110.0 kW installed capacity, 70.0 kW peak demand, PF=0.95))
+New "LoadShape.target_load_shape" npts=24 interval=1.0 mult=[0.0526 0.0350 0.0251 0.0181 0.0139 0.0179 0.0285 0.0606 0.2852 0.5471 0.5871 0.5905 0.6364 0.3916 0.4244 0.3776 0.4091 0.4369 0.4340 0.2390 0.1939 0.1686 0.1371 0.0930]
 
-! 2. Solar PV Generation Shape (IDENTICAL across all 3 cases)
+! 2. Solar PV Generation Shape (3 x Delta M88H Inverters)
 New "LoadShape.solar_shape" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0099 0.0854 0.2496 0.4567 0.6810 0.8529 0.9604 0.9973 1.0000 0.9602 0.8699 0.7222 0.5223 0.3243 0.1514 0.0318 0.0006 0.0 0.0 0.0]
 
-! 3. Battery Storage Dispatch Shape (IDENTICAL across all 3 cases)
-New "LoadShape.bess_dispatch" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 -0.4 -0.8 -1.0 -0.9 -0.6 0.0 0.0 0.3 0.8 1.0 0.9 0.7 0.2 0.0 0.0]
+! 3. Battery Storage Dispatch Shape
+New "LoadShape.bess_dispatch" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 -0.4 -0.8 -1.0 -0.9 -0.6 0.0 0.0 0.3 0.8 1.0 0.9 0.7 0.2 0.0 0.0]

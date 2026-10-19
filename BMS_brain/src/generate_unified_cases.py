@@ -3,30 +3,43 @@ from pathlib import Path
 
 base_dir = Path(r"c:\Users\alesk\Documents\Git-repo\Pre-PhD\BMS_brain")
 
+# Load and Battery specifications for each case
 cases = [
     {
         "folder": "OpenDSS-g-case-supermarket",
         "name": "Case 1: Supermarket Facility Load (c_gen)",
-        "load_kw": 50.0,
+        "load_kw": 146.5,
         "load_pf": 0.95,
-        "shape_mult": "0.5072 0.4905 0.4857 0.4790 0.5081 0.9323 1.0000 0.6378 0.4213 0.3380 0.2656 0.2185 0.2331 0.2215 0.2665 0.3138 0.3971 0.4753 0.5763 0.6394 0.5933 0.5327 0.5379 0.5136",
-        "load_desc": "Supermarket facility base consumption (c_gen)"
+        "shape_mult": "0.3808 0.3683 0.3647 0.3597 0.3815 0.7000 0.7509 0.4789 0.3163 0.2538 0.1994 0.1641 0.1750 0.1663 0.2001 0.2356 0.2982 0.3569 0.4327 0.4801 0.4455 0.4000 0.4039 0.3856",
+        "load_desc": "Supermarket facility (146.5 kW nominal capacity, 110.0 kW max demand, PF=0.95)",
+        # Battery from battery_sizing_results.json (supermarket)
+        "bat_kw": 69.31,
+        "bat_kwh": 264.46,
+        "bat_stored": 132.23
     },
     {
         "folder": "OpenDSS-g-case-ev-lidl",
         "name": "Case 2: Lidl EV Charging Stations (c_ev)",
-        "load_kw": 22.0,
-        "load_pf": 1.00,
-        "shape_mult": "0.0826 0.0550 0.0395 0.0285 0.0219 0.0282 0.0448 0.0953 0.4481 0.8597 0.9226 0.9279 1.0000 0.6154 0.6669 0.5933 0.6428 0.6865 0.6820 0.3756 0.3047 0.2649 0.2154 0.1461",
-        "load_desc": "Lidl commercial retail EV charging stations (c_ev)"
+        "load_kw": 110.0,
+        "load_pf": 0.95,
+        "shape_mult": "0.0526 0.0350 0.0251 0.0181 0.0139 0.0179 0.0285 0.0606 0.2852 0.5471 0.5871 0.5905 0.6364 0.3916 0.4244 0.3776 0.4091 0.4369 0.4340 0.2390 0.1939 0.1686 0.1371 0.0930",
+        "load_desc": "Lidl commercial EV charging hub (110.0 kW installed capacity, 70.0 kW peak demand, PF=0.95)",
+        # Battery from battery_sizing_results.json (ev)
+        "bat_kw": 0.65,
+        "bat_kwh": 1.29,
+        "bat_stored": 0.65
     },
     {
         "folder": "OpenDSS-g-case-ev-caltech",
         "name": "Case 3: Caltech Campus EV Fleet (c_ev)",
-        "load_kw": 40.0,
+        "load_kw": 150.0,
         "load_pf": 1.00,
-        "shape_mult": "0.0706 0.0580 0.0443 0.0356 0.0306 0.0266 0.0525 0.0935 0.3192 0.7936 1.0000 0.8771 0.6731 0.6023 0.5178 0.4130 0.3255 0.2344 0.2116 0.2162 0.1968 0.1637 0.1012 0.0807",
-        "load_desc": "Caltech workplace campus EV charging fleet (c_ev)"
+        "shape_mult": "0.0418 0.0343 0.0262 0.0211 0.0181 0.0157 0.0311 0.0554 0.1890 0.4698 0.5920 0.5192 0.3985 0.3566 0.3065 0.2445 0.1927 0.1388 0.1253 0.1280 0.1165 0.0969 0.0599 0.0478",
+        "load_desc": "Caltech campus workplace EV fleet (150.0 kW transformer capacity, 88.8 kW peak demand, PF=1.0)",
+        # Battery from battery_sizing_results.json (caltech_ev)
+        "bat_kw": 14.07,
+        "bat_kwh": 31.36,
+        "bat_stored": 15.68
     }
 ]
 
@@ -48,7 +61,8 @@ n_bat, 0, 0
 n_load, 0, 0
 """
 
-voltage_bases = """Set Voltagebases=[11.0, 0.23]
+# European LV distribution standard: 400 V line-to-line (0.4 kV), matching Delta M88H 400 VCA
+voltage_bases = """Set Voltagebases=[11.0, 0.4]
 CalcVoltagebases
 """
 
@@ -78,30 +92,47 @@ swt_control = """New "SwtControl.sw_inv" SwitchedObj=Line.line_reactor State=clo
 vsource = """Edit "Vsource.source" bus1=sbus.1.2.3 bus2=sbus.0.0.0 basekv=11.0 Isc1=1500 Isc3=3000 pu=1.000000
 """
 
-transformer = """New "Transformer.xfmr_0" windings=2 XHL=10 buses=[sbus.1.2.3, slv.1.2.3] conns=[delta, wye] kVs=[11.0, 0.23] kVAs=[800, 800] taps=[1.0, 1.0] wdg=1 %R=0.2 wdg=2 %R=0.2
+# Transformer secondary updated to 0.4 kV (400 V) matching Chilly-Mazarin plant
+transformer = """New "Transformer.xfmr_0" windings=2 XHL=10 buses=[sbus.1.2.3, slv.1.2.3] conns=[delta, wye] kVs=[11.0, 0.4] kVAs=[800, 800] taps=[1.0, 1.0] wdg=1 %R=0.2 wdg=2 %R=0.2
 """
 
-lines = """! 1. Substation LV Main Feeder: slv to pcc
+# Distribution lines and central inverter virtual micro-reactor
+lines = """! 1. Substation LV Main Feeder: slv to pcc (400V)
 New "Line.line_0" phases=3 bus1=slv.1.2.3 bus2=pcc.1.2.3 r1=0.09 x1=0.08 r0=0.27 x0=0.24 length=0.05 units=km Normamps=1200 Emergamps=1500
 
 ! 2. VIRTUAL MICRO-REACTOR LINE (Central Bidirectional Inverter Interface): pcc to n_common
-New "Line.line_reactor" phases=3 bus1=pcc.1.2.3 bus2=n_common.1.2.3 r1=0.20 x1=0.20 r0=0.20 x0=0.20 length=0.001 units=km Normamps=150 Emergamps=180
+! Sized for 210 kW PV + Battery exchange at 400V (Normamps=400)
+New "Line.line_reactor" phases=3 bus1=pcc.1.2.3 bus2=n_common.1.2.3 r1=0.20 x1=0.20 r0=0.20 x0=0.20 length=0.001 units=km Normamps=400 Emergamps=500
 
 ! 3. Internal Branches connected to the Common Bus:
-New "Line.line_pv" phases=3 bus1=n_common.1.2.3 bus2=n_pv.1.2.3 r1=0.10 x1=0.10 r0=0.10 x0=0.10 length=0.001 units=km Normamps=100 Emergamps=120
-New "Line.line_bat" phases=3 bus1=n_common.1.2.3 bus2=n_bat.1.2.3 r1=0.10 x1=0.10 r0=0.10 x0=0.10 length=0.001 units=km Normamps=100 Emergamps=120
-New "Line.line_load" phases=3 bus1=n_common.1.2.3 bus2=n_load.1.2.3 r1=0.10 x1=0.10 r0=0.10 x0=0.10 length=0.001 units=km Normamps=150 Emergamps=180
+New "Line.line_pv" phases=3 bus1=n_common.1.2.3 bus2=n_pv.1.2.3 r1=0.10 x1=0.10 r0=0.10 x0=0.10 length=0.001 units=km Normamps=400 Emergamps=500
+New "Line.line_bat" phases=3 bus1=n_common.1.2.3 bus2=n_bat.1.2.3 r1=0.10 x1=0.10 r0=0.10 x0=0.10 length=0.001 units=km Normamps=200 Emergamps=250
+New "Line.line_load" phases=3 bus1=n_common.1.2.3 bus2=n_load.1.2.3 r1=0.10 x1=0.10 r0=0.10 x0=0.10 length=0.001 units=km Normamps=250 Emergamps=300
 """
 
-pv_system = """! 1. MPPT Flat Efficiency Curve (eta_mppt = 0.99)
-New "XYCurve.mppt_eff" npts=4 xarray=[0.1 0.2 0.5 1.0] yarray=[0.99 0.99 0.99 0.99]
+# PV System: 3 full Delta M88H inverters aggregated
+# Sizing: 3 x 70 kW = 210 kVA AC rating, 3 x 90 kWp = 270 kWp DC peak rating
+# Inverter Loading Ratio ILR = 270 / 210 = 1.286 (clipping enabled above 210 kW)
+# %Cutin = 0.21% (3 x 150 W startup power)
+# Reactive capability: PF 0.80 lead/lag -> kvarMax = 210 * 0.6 = 126.0 kvar
+pv_system = """! 1. MPPT Inverter Efficiency Curve (Delta M88H-121: Peak 98.8%, Euro 98.5%)
+New "XYCurve.mppt_eff" npts=4 xarray=[0.1 0.2 0.5 1.0] yarray=[0.965 0.980 0.988 0.985]
 
-! 2. Solar PV System on Common Bus (n_pv)
-New "PVSystem.pv_1" phases=3 bus1=n_pv.1.2.3 kv=0.23 kVA=20.0 Pmpp=20.0 EffCurve=mppt_eff kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 ControlMode=GFL daily=solar_shape
+! 2. Solar PV System on Common Bus (3 x Delta M88H Inverters Aggregated)
+! Supports active power clipping (210 kW) + reactive PF compensation (up to 126 kvar)
+New "PVSystem.pv_1" phases=3 bus1=n_pv.1.2.3 kv=0.40 kVA=210.0 Pmpp=270.0 %Pmpp=100.0 %Cutin=0.21 %Cutout=0.10 EffCurve=mppt_eff kvarMax=126.0 kvarMaxAbs=126.0 kvar=0.0 VarFollowInverter=No ControlMode=GFL WattPriority=Yes daily=solar_shape duty=solar_shape
 """
 
-storage = """! Battery Energy Storage System (BESS) & BMS on Common Bus (n_bat)
-New "Storage.sto_0" phases=3 bus1=n_bat.1.2.3 kv=0.23 kVA=20.0 kWrated=20.0 kWhrated=40.0 kWhstored=20.0 %reserve=20.0 %effcharge=95.0 %effdischarge=95.0 %IdlingkW=0.1 kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 daily=bess_dispatch dispMode=Follow State=IDLING
+# InvControl: Volt-Watt Active Power Curtailment as in EPRI PVSystem_InvControl.pdf
+inv_control = """! --------------------------------------------------------------------------
+! InvControl.dss - Smart Inverter Volt-Watt Power Curtailment / Inverter Clipping
+! Based on EPRI Reference: PVSystem_InvControl.pdf
+! - DERList explicitly targets PVSystem.pv_1
+! - VoltwattYAxis=KVARATINGPU anchors curtailment to the 210 kVA AC rating
+! --------------------------------------------------------------------------
+New "XYCurve.voltwatt_curve" npts=4 xarray=[1.00 1.03 1.06 1.10] yarray=[1.00 1.00 0.20 0.00]
+New "XYCurve.voltvar_curve" npts=6 xarray=[0.90 0.95 0.98 1.02 1.05 1.10] yarray=[1.00 1.00 0.00 0.00 -1.00 -1.00]
+New "InvControl.pv_ctrl" DERList=[PVSystem.pv_1] mode=VOLTWATT voltage_curvex_ref=rated voltwatt_curve=voltwatt_curve VoltwattYAxis=KVARATINGPU DeltaP_factor=0.45
 """
 
 monitors = """New "Monitor.inv_flow" element=Line.line_reactor terminal=1 mode=1 PPolar=no enabled=true
@@ -129,6 +160,7 @@ Redirect Line.dss
 Redirect Loads.dss
 Redirect PVSystem.dss
 Redirect Storage.dss
+Redirect InvControl.dss
 Redirect SwtControl.dss
 
 Redirect Monitor.dss
@@ -175,20 +207,34 @@ for c in cases:
     (cdir / "Transformer.dss").write_text(transformer, encoding="utf-8")
     (cdir / "Line.dss").write_text(lines, encoding="utf-8")
     (cdir / "PVSystem.dss").write_text(pv_system, encoding="utf-8")
-    (cdir / "Storage.dss").write_text(storage, encoding="utf-8")
+    (cdir / "InvControl.dss").write_text(inv_control, encoding="utf-8")
     (cdir / "Monitor.dss").write_text(monitors, encoding="utf-8")
     (cdir / "EnergyMeter.dss").write_text(energy_meter, encoding="utf-8")
     (cdir / "Master.dss").write_text(master, encoding="utf-8")
     (cdir / "Default_project.Dsp").write_text(dsp, encoding="utf-8")
     
+    # Storage sized from battery dimensioning optimizer for the specific case
+    bat_kva = round(c['bat_kw'] * 1.25, 2)
+    bat_kvar = round(c['bat_kw'] * 0.75, 2)
+    storage_content = f"""! --------------------------------------------------------------------------
+! Storage.dss - {c['name']}
+! Sizing direct input from Battery Dimensioning System:
+! Rated Power: {c['bat_kw']} kW, Energy Capacity: {c['bat_kwh']} kWh
+! --------------------------------------------------------------------------
+New "Storage.sto_0" phases=3 bus1=n_bat.1.2.3 kv=0.40 kVA={bat_kva} kWrated={c['bat_kw']} kWhrated={c['bat_kwh']} kWhstored={c['bat_stored']} %reserve=20.0 %effcharge=95.0 %effdischarge=95.0 %IdlingkW=0.1 kvarMax={bat_kvar} kvarMaxAbs={bat_kvar} kvar=0.0 WattPriority=Yes daily=bess_dispatch duty=bess_dispatch dispMode=Follow State=IDLING
+"""
+    (cdir / "Storage.dss").write_text(storage_content, encoding="utf-8")
+    
+    # Case-specific Loads.dss (strictly 1 load on n_load)
     loads_content = f"""! --------------------------------------------------------------------------
 ! Loads.dss - {c['name']}
-! EXACT SAME CONNECTION (n_load on Common Bus), ONLY LOAD CONFIGURATION CHANGES
+! STRICTLY ONE LOAD CONNECTED TO THE COMMON BUS LOAD NODE (n_load)
 ! --------------------------------------------------------------------------
-New "Load.load_1" phases=3 bus1=n_load.1.2.3 kV=0.23 kW={c['load_kw']} pf={c['load_pf']} model=1 daily=target_load_shape
+New "Load.load_1" phases=3 bus1=n_load.1.2.3 kV=0.40 kW={c['load_kw']} pf={c['load_pf']} model=1 daily=target_load_shape duty=target_load_shape
 """
     (cdir / "Loads.dss").write_text(loads_content, encoding="utf-8")
     
+    # Case-specific LoadShape.dss
     load_shape_content = f"""! --------------------------------------------------------------------------
 ! LoadShape.dss - {c['name']}
 ! --------------------------------------------------------------------------
@@ -196,11 +242,11 @@ New "Load.load_1" phases=3 bus1=n_load.1.2.3 kV=0.23 kW={c['load_kw']} pf={c['lo
 ! 1. Target Demand Profile ({c['load_desc']})
 New "LoadShape.target_load_shape" npts=24 interval=1.0 mult=[{c['shape_mult']}]
 
-! 2. Solar PV Generation Shape (IDENTICAL across all 3 cases)
+! 2. Solar PV Generation Shape (3 x Delta M88H Inverters)
 New "LoadShape.solar_shape" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0099 0.0854 0.2496 0.4567 0.6810 0.8529 0.9604 0.9973 1.0000 0.9602 0.8699 0.7222 0.5223 0.3243 0.1514 0.0318 0.0006 0.0 0.0 0.0]
 
-! 3. Battery Storage Dispatch Shape (IDENTICAL across all 3 cases)
-New "LoadShape.bess_dispatch" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 -0.4 -0.8 -1.0 -0.9 -0.6 0.0 0.0 0.3 0.8 1.0 0.9 0.7 0.2 0.0 0.0]
+! 3. Battery Storage Dispatch Shape
+New "LoadShape.bess_dispatch" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 -0.4 -0.8 -1.0 -0.9 -0.6 0.0 0.0 0.3 0.8 1.0 0.9 0.7 0.2 0.0 0.0]
 """
     (cdir / "LoadShape.dss").write_text(load_shape_content, encoding="utf-8")
-    print(f"Successfully generated unified circuit for: {c['folder']}")
+    print(f"Successfully generated 3-inverter circuit for: {c['folder']}")
