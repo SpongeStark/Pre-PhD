@@ -1,9 +1,0 @@
-! --------------------------------------------------------------------------
-! InvControl.dss - Smart Inverter Volt-Watt Power Curtailment / Inverter Clipping
-! Based on EPRI Reference: PVSystem_InvControl.pdf
-! - DERList explicitly targets PVSystem.pv_1
-! - VoltwattYAxis=KVARATINGPU anchors curtailment to the 210 kVA AC rating
-! --------------------------------------------------------------------------
-New "XYCurve.voltwatt_curve" npts=4 xarray=[1.00 1.03 1.06 1.10] yarray=[1.00 1.00 0.20 0.00]
-New "XYCurve.voltvar_curve" npts=6 xarray=[0.90 0.95 0.98 1.02 1.05 1.10] yarray=[1.00 1.00 0.00 0.00 -1.00 -1.00]
-New "InvControl.pv_ctrl" DERList=[PVSystem.pv_1] mode=VOLTWATT voltage_curvex_ref=rated voltwatt_curve=voltwatt_curve VoltwattYAxis=KVARATINGPU DeltaP_factor=0.45

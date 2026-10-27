@@ -12,7 +12,6 @@ Redirect Line.dss
 Redirect Loads.dss
 Redirect PVSystem.dss
 Redirect Storage.dss
-Redirect InvControl.dss
 Redirect SwtControl.dss
 
 Redirect Monitor.dss

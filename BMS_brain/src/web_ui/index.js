@@ -15,6 +15,8 @@ document.addEventListener("DOMContentLoaded", () => {
     loadMPCMetrics();
     // Load initial RT metrics
     loadRTMetrics();
+    // Load initial OpenDSS-G DSTCP metrics
+    loadOpenDSSMetrics();
     // Start continuous status updates every 2 seconds
     setInterval(updateSystemStatus, 2000);
 });
@@ -38,6 +40,8 @@ function switchTab(tabId) {
         loadMPCMetrics();
     } else if (tabId === "rt") {
         loadRTMetrics();
+    } else if (tabId === "opendss") {
+        loadOpenDSSMetrics();
     }
 }
 
@@ -307,6 +311,53 @@ function updateCards(state, previousState = {}) {
         { key: "rt_caltech", cardId: "rt-card-caltech", btnClass: ".btn-rt-caltech", defaultText: "🎓 Run Caltech Campus RT", runningText: "Compensating Caltech..." }
     ];
 
+    // 5. OpenDSS-G DSTCP Co-Simulation Cards
+    const dssConfigs = [
+        { key: "opendss_supermarket", cardId: "dss-card-supermarket", btnClass: ".btn-dss-supermarket", defaultText: "🏢 Run Supermarket (146.5 kW)", runningText: "Solving Supermarket (96 Steps)..." },
+        { key: "opendss_ev", cardId: "dss-card-ev", btnClass: ".btn-dss-ev", defaultText: "⚡ Run Lidl EV (110 kW)", runningText: "Solving Lidl EV (96 Steps)..." },
+        { key: "opendss_caltech_ev", cardId: "dss-card-caltech", btnClass: ".btn-dss-caltech", defaultText: "🎓 Run Caltech EV (150 kW)", runningText: "Solving Caltech EV (96 Steps)..." }
+    ];
+
+    dssConfigs.forEach(cfg => {
+        const card = document.getElementById(cfg.cardId);
+        const btn = document.querySelector(cfg.btnClass);
+        const currentStatus = state[cfg.key]?.status || "idle";
+
+        if (card) {
+            const badge = card.querySelector(".status-badge");
+            if (badge) {
+                badge.className = `status-badge ${currentStatus}`;
+                badge.textContent = currentStatus === "success" ? "0-Export [Passed]" : currentStatus;
+            }
+            if (currentStatus === "running") {
+                card.classList.add("running");
+                card.classList.remove("success", "error");
+            } else if (currentStatus === "success") {
+                card.classList.add("success");
+                card.classList.remove("running", "error");
+            } else if (currentStatus === "error") {
+                card.classList.add("error");
+                card.classList.remove("running", "success");
+            } else {
+                card.classList.remove("running", "success", "error");
+            }
+        }
+
+        if (btn) {
+            if (currentStatus === "running") {
+                btn.disabled = true;
+                btn.textContent = cfg.runningText;
+                startLogPolling(cfg.key);
+            } else {
+                btn.disabled = false;
+                btn.textContent = cfg.defaultText;
+            }
+        }
+    });
+    if (state["opendss_all"]?.status === "running") {
+        startLogPolling("opendss_all");
+    }
+
     rtConfigs.forEach(cfg => {
         const card = document.getElementById(cfg.cardId);
         const btn = document.querySelector(cfg.btnClass);
@@ -439,6 +490,8 @@ function startLogPolling(scriptKey) {
         targetBoxId = "log-mpc";
     } else if (scriptKey.startsWith("rt_")) {
         targetBoxId = "log-rt";
+    } else if (scriptKey.startsWith("opendss_")) {
+        targetBoxId = "log-opendss";
     }
     
     const pollFunc = async () => {
@@ -470,6 +523,10 @@ function startLogPolling(scriptKey) {
                 if (scriptKey.startsWith("rt_")) {
                     loadRTMetrics();
                     refreshRTPlots();
+                }
+                if (scriptKey.startsWith("opendss_")) {
+                    loadOpenDSSMetrics();
+                    refreshOpenDSSPlots();
                 }
             }
         } catch (err) {
@@ -1044,4 +1101,169 @@ function refreshRTPlots() {
     
     const caltechImg = document.querySelector("#rtgallery-caltech img");
     if (caltechImg) caltechImg.src = `${API_BASE}/api/plots/rt_schedule_caltech_ev.png?t=${t}`;
+}
+
+
+// ============================================================================
+// OPENDSS-G TIME-MODE DSTCP CONTROLLER UI FUNCTIONS (MODE A & MODE B)
+// ============================================================================
+
+function updateOpenDSSModeDescription() {
+    const sel = document.getElementById("opendss-source-select");
+    const banner = document.getElementById("opendss-mode-banner");
+    if (!sel || !banner) return;
+
+    const val = sel.value;
+    if (val === "loadshape") {
+        banner.innerHTML = `<strong>Mode A (Local BMS + LoadShape.dss):</strong> OpenDSS-G uses its internal 96-step <code>LoadShape.dss</code> profiles (<code>minterval=15</code>). At each step <i>k</i>, the controller charges the battery from surplus PV (up to 90% SoC), discharges on deficit (down to 20% SoC), and throttles <code>%Pmpp = (P_PV_dispatched / 210.0) &times; 100</code> so <code>P_grid &ge; 0 kW</code>.`;
+    } else if (val === "rt") {
+        banner.innerHTML = `<strong>Mode B — Real-Time Controller Schedule (<code>rt_timeseries</code>):</strong> Reads the 96-step closed-loop schedule produced by your Forecaster + MPC + Real-Time Secondary Controller (<code>P_load_actual</code>, <code>P_PV_actual</code>, <code>P_ch_rt</code>, <code>P_dis_rt</code>, <code>P_curt_rt</code>) and injects each 15-min step into OpenDSS-G via DSTCP while enforcing <code>%Pmpp</code> zero grid re-injection.`;
+    } else if (val === "mpc") {
+        banner.innerHTML = `<strong>Mode B — Day-Ahead MPC Schedule (<code>mpc_timeseries</code>):</strong> Reads the 96-step day-ahead schedule produced by your Forecaster + IPOPT MPC Optimizer (<code>P_load_forecast</code>, <code>P_PV_forecast</code>, <code>P_ch_sch</code>, <code>P_dis_sch</code>, <code>P_curt_sch</code>) and executes the 96 steps in OpenDSS-G over DSTCP.`;
+    }
+}
+
+async function runOpenDSS(scriptKey) {
+    try {
+        const sourceSel = document.getElementById("opendss-source-select");
+        const noCompileChk = document.getElementById("opendss-no-compile");
+        const showPlotsChk = document.getElementById("opendss-show-plots");
+
+        const payload = {
+            script: scriptKey,
+            source: sourceSel ? sourceSel.value : "loadshape",
+            no_compile: noCompileChk ? noCompileChk.checked : false,
+            show_plots: showPlotsChk ? showPlotsChk.checked : false
+        };
+
+        const res = await fetch(`${API_BASE}/api/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const errData = await res.json();
+            alert(errData.error || "Failed to start OpenDSS-G DSTCP simulation");
+            return;
+        }
+
+        const currentBox = document.getElementById("log-opendss");
+        if (currentBox) {
+            currentBox.classList.remove("collapsed");
+        }
+
+        updateSystemStatus();
+    } catch (err) {
+        alert("Server error starting OpenDSS-G: " + err.message);
+    }
+}
+
+function switchOpenDSSGallery(plotId) {
+    document.querySelectorAll("#opendss-gallery-tabs .gallery-tab").forEach(btn => btn.classList.remove("active"));
+    document.querySelectorAll("#tab-opendss .gallery-img-container").forEach(c => c.classList.add("hidden"));
+
+    if (event && event.target) {
+        event.target.classList.add("active");
+    }
+    const targetEl = document.getElementById(`dssgallery-${plotId}`);
+    if (targetEl) targetEl.classList.remove("hidden");
+}
+
+function formatOpenDSSSourceLabel(src) {
+    if (!src) return "--";
+    const s = src.toLowerCase();
+    if (s === "loadshape") return "Mode A (LOADSHAPE)";
+    if (s === "rt") return "Mode B (RT SCHEDULE)";
+    if (s === "mpc") return "Mode B (MPC SCHEDULE)";
+    return src.toUpperCase();
+}
+
+async function loadOpenDSSMetrics() {
+    try {
+        const res = await fetch(`${API_BASE}/api/opendss/metrics`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update TCP Server 127.0.0.1:6345 connectivity badge
+        const tcpBadge = document.getElementById("dss-tcp-badge");
+        if (tcpBadge) {
+            if (data.tcp_online) {
+                tcpBadge.className = "status-badge success";
+                tcpBadge.textContent = "🟢 DSTCP 127.0.0.1:6345 ONLINE";
+            } else {
+                tcpBadge.className = "status-badge error";
+                tcpBadge.textContent = "🟠 DSTCP 127.0.0.1:6345 OFFLINE (Enable TCP in OpenDSS-G)";
+            }
+        }
+
+        const cases = data.cases || {};
+        const mapping = [
+            { modeKey: "supermarket", prefix: "dss-supermarket", cardId: "dss-card-supermarket" },
+            { modeKey: "ev", prefix: "dss-ev", cardId: "dss-card-ev" },
+            { modeKey: "caltech_ev", prefix: "dss-caltech", cardId: "dss-card-caltech" }
+        ];
+
+        mapping.forEach(m => {
+            const c = cases[m.modeKey];
+            if (!c) return;
+
+            const loadEl = document.getElementById(`${m.prefix}-load`);
+            const srcEl = document.getElementById(`${m.prefix}-source`);
+            const pvEl = document.getElementById(`${m.prefix}-pv`);
+            const curtEl = document.getElementById(`${m.prefix}-curt`);
+            const gridEl = document.getElementById(`${m.prefix}-grid`);
+            const pccEl = document.getElementById(`${m.prefix}-pcc`);
+            const voltEl = document.getElementById(`${m.prefix}-volt`);
+            const cardEl = document.getElementById(m.cardId);
+
+            if (loadEl) loadEl.textContent = `${c.installed_load_kw.toFixed(1)} kW / ${c.peak_load_kw.toFixed(2)} kW`;
+            if (srcEl) srcEl.textContent = formatOpenDSSSourceLabel(c.source);
+            if (pvEl) pvEl.textContent = `${c.peak_pv_avail_clipped_kw.toFixed(2)} → ${c.peak_pv_dispatched_kw.toFixed(2)} kW`;
+            if (curtEl) curtEl.textContent = `${c.total_pv_curtailed_kwh.toFixed(2)} kWh`;
+            if (gridEl) gridEl.textContent = `${c.total_grid_imported_kwh.toFixed(2)} kWh`;
+            if (pccEl) {
+                const statusStr = c.zero_reinjection_passed ? "[PASSED]" : "[VIOLATED]";
+                pccEl.textContent = `Min PCC = ${c.min_pcc_kw.toFixed(4)} kW ${statusStr}`;
+                pccEl.className = `mpc-stat-val ${c.zero_reinjection_passed ? "val-green" : "val-red"}`;
+            }
+            if (voltEl) voltEl.textContent = `[${c.v_common_min_pu.toFixed(4)}, ${c.v_common_max_pu.toFixed(4)}] pu`;
+
+            if (cardEl && !cardEl.classList.contains("running")) {
+                const badge = cardEl.querySelector(".status-badge");
+                if (badge && badge.textContent === "Idle") {
+                    badge.className = "status-badge success";
+                    badge.textContent = "Loaded";
+                }
+            }
+        });
+
+        refreshOpenDSSPlots();
+    } catch (err) {
+        console.error("Failed to load OpenDSS-G metrics:", err);
+    }
+}
+
+function refreshOpenDSSPlots() {
+    const t = new Date().getTime();
+    const plotMap = {
+        "dssgallery-sm_classic": "dstcp_classic_4figs_supermarket.png",
+        "dssgallery-sm_dash": "dstcp_96step_supermarket.png",
+        "dssgallery-ev_classic": "dstcp_classic_4figs_ev.png",
+        "dssgallery-ev_dash": "dstcp_96step_ev.png",
+        "dssgallery-caltech_classic": "dstcp_classic_4figs_caltech_ev.png",
+        "dssgallery-caltech_dash": "dstcp_96step_caltech_ev.png"
+    };
+
+    for (const [containerId, fileName] of Object.entries(plotMap)) {
+        const container = document.getElementById(containerId);
+        if (!container) continue;
+        const img = container.querySelector("img");
+        const placeholder = container.querySelector(".img-placeholder");
+        if (img) {
+            img.style.display = "block";
+            if (placeholder) placeholder.style.display = "none";
+            img.src = `${API_BASE}/api/plots/${fileName}?t=${t}`;
+        }
+    }
 }

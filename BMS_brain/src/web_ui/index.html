@@ -62,6 +62,7 @@
             <button class="tab-btn" onclick="switchTab('forecasting')">🔮 Forecasting Studio</button>
             <button class="tab-btn" onclick="switchTab('mpc')">🎯 MPC Controller</button>
             <button class="tab-btn" onclick="switchTab('rt')">⚡ Real-Time Controller</button>
+            <button class="tab-btn" onclick="switchTab('opendss')">🔌 OpenDSS-G (DSTCP)</button>
         </div>
 
         <!-- MAIN LAYOUT -->
@@ -764,6 +765,234 @@
                 </div>
             </section>
         
+
+            <!-- TAB 6: OPENDSS-G TIME-MODE DSTCP CONTROLLER -->
+            <section id="tab-opendss" class="tab-panel">
+                <div class="pipeline-run-box">
+                    <div class="run-header">
+                        <div>
+                            <h2>🔌 OpenDSS-G Time-Mode Co-Simulation (DSTCP Protocol)</h2>
+                            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+                                96-Step (15-min interval = 24h) AC Power Flow Co-Simulation over Direct Server TCP (<code>127.0.0.1:6345</code>). Enforces 3 &times; Delta M88H rating (<code>Pmpp = 210 kW, kVA = 210 kVA</code>), battery [20%, 90%] SoC dispatch, and active power curtailment via <code>%Pmpp</code> for strict zero grid re-injection (<code>P_grid &ge; 0</code>).
+                            </p>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span id="dss-tcp-badge" class="status-badge idle" style="padding: 8px 14px; font-size: 0.8rem;">
+                                TCP 127.0.0.1:6345: Checking...
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Mode Selector (Mode A vs Mode B) & Execution Options -->
+                    <div class="forecast-action-bar" style="flex-wrap: wrap; gap: 14px; margin-bottom: 12px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(6, 182, 212, 0.25);">
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <span class="forecast-bar-label" style="color: var(--neon-cyan); font-weight: 700;">1. Select Control Mode:</span>
+                            <select id="opendss-source-select" onchange="updateOpenDSSModeDescription()" style="background: #0f172a; color: #f8fafc; border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 6px; padding: 8px 12px; font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+                                <option value="loadshape">Mode A — Local Rule-Based BMS + OpenDSS-G LoadShape.dss (96 Steps)</option>
+                                <option value="rt">Mode B (RT) — Driven by Real-Time Secondary Controller Schedule (rt_timeseries)</option>
+                                <option value="mpc">Mode B (MPC) — Driven by Day-Ahead Forecaster + MPC Schedule (mpc_timeseries)</option>
+                            </select>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 16px; margin-left: auto; font-size: 0.82rem; color: var(--text-muted);">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;" title="Skip sending 'compile Master.dss' over TCP if the circuit is already open in OpenDSS-G">
+                                <input type="checkbox" id="opendss-no-compile">
+                                <span>Use Currently Open Circuit (<code>--no-compile</code>)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;" title="Pop up interactive Matplotlib windows on desktop when finished">
+                                <input type="checkbox" id="opendss-show-plots">
+                                <span>Pop Up Desktop Plots (<code>--show-plots</code>)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Mode Explanation Banner -->
+                    <div id="opendss-mode-banner" style="background: rgba(6, 182, 212, 0.08); border-left: 3px solid var(--neon-cyan); padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 0.82rem; color: #cbd5e1;">
+                        <strong>Mode A (Local BMS + LoadShape.dss):</strong> OpenDSS-G uses its internal 96-step <code>LoadShape.dss</code> profiles (<code>minterval=15</code>). At each step <i>k</i>, the controller charges the battery from surplus PV (up to 90% SoC), discharges on deficit (down to 20% SoC), and throttles <code>%Pmpp = (P_PV_dispatched / 210.0) &times; 100</code> so <code>P_grid &ge; 0 kW</code>.
+                    </div>
+
+                    <!-- Action Bar for Individual OpenDSS-G Cases -->
+                    <div class="forecast-action-bar">
+                        <span class="forecast-bar-label">2. Execute 96-Step DSTCP Simulation:</span>
+                        <div class="forecast-buttons-row">
+                            <button class="btn-mpc btn-dss-supermarket" onclick="runOpenDSS('opendss_supermarket')">🏢 Run Supermarket (146.5 kW)</button>
+                            <button class="btn-mpc btn-dss-ev" onclick="runOpenDSS('opendss_ev')">⚡ Run Lidl EV (110 kW)</button>
+                            <button class="btn-mpc btn-dss-caltech" onclick="runOpenDSS('opendss_caltech_ev')">🎓 Run Caltech EV (150 kW)</button>
+                            <button class="btn-primary" onclick="runOpenDSS('opendss_all')" style="margin-left: 6px;">🚀 Run All 3 Cases</button>
+                            <button class="btn-copy" style="margin-left: auto;" onclick="loadOpenDSSMetrics()">↻ Refresh Metrics</button>
+                        </div>
+                    </div>
+
+                    <!-- 3 Microgrid Cases OpenDSS-G Summary Cards -->
+                    <div class="mpc-grid" id="opendss-summary-cards">
+                        <!-- Card 1: Supermarket -->
+                        <div class="mpc-card" id="dss-card-supermarket">
+                            <div class="mpc-card-header">
+                                <h4>🏢 Supermarket Facility</h4>
+                                <span class="status-badge idle">Idle</span>
+                            </div>
+                            <div class="mpc-stat-list">
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Nominal / Peak Load:</span>
+                                    <span class="mpc-stat-val" id="dss-supermarket-load">146.5 kW / 110.01 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Control Mode Source:</span>
+                                    <span class="mpc-stat-val" id="dss-supermarket-source" style="color: var(--neon-cyan);">Mode A (LOADSHAPE)</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Peak PV (Avail &rarr; Disp):</span>
+                                    <span class="mpc-stat-val" id="dss-supermarket-pv">210.00 &rarr; 121.76 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Curtailed PV Energy:</span>
+                                    <span class="mpc-stat-val val-amber" id="dss-supermarket-curt">1369.19 kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Grid Imported Energy:</span>
+                                    <span class="mpc-stat-val" id="dss-supermarket-grid">468.25 kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Zero Re-Injection Check:</span>
+                                    <span class="mpc-stat-val val-green" id="dss-supermarket-pcc">Min PCC = -0.0007 kW [PASSED]</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Common Bus Voltage:</span>
+                                    <span class="mpc-stat-val" id="dss-supermarket-volt">[0.9911, 0.9987] pu</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 2: Lidl EV -->
+                        <div class="mpc-card" id="dss-card-ev">
+                            <div class="mpc-card-header">
+                                <h4>⚡ Lidl Commercial EV</h4>
+                                <span class="status-badge idle">Idle</span>
+                            </div>
+                            <div class="mpc-stat-list">
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Nominal / Peak Load:</span>
+                                    <span class="mpc-stat-val" id="dss-ev-load">110.0 kW / 70.00 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Control Mode Source:</span>
+                                    <span class="mpc-stat-val" id="dss-ev-source" style="color: var(--neon-cyan);">--</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Peak PV (Avail &rarr; Disp):</span>
+                                    <span class="mpc-stat-val" id="dss-ev-pv">-- &rarr; -- kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Curtailed PV Energy:</span>
+                                    <span class="mpc-stat-val val-amber" id="dss-ev-curt">-- kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Grid Imported Energy:</span>
+                                    <span class="mpc-stat-val" id="dss-ev-grid">-- kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Zero Re-Injection Check:</span>
+                                    <span class="mpc-stat-val val-green" id="dss-ev-pcc">--</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Common Bus Voltage:</span>
+                                    <span class="mpc-stat-val" id="dss-ev-volt">[--, --] pu</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 3: Caltech EV -->
+                        <div class="mpc-card" id="dss-card-caltech">
+                            <div class="mpc-card-header">
+                                <h4>🎓 Caltech Campus Fleet</h4>
+                                <span class="status-badge idle">Idle</span>
+                            </div>
+                            <div class="mpc-stat-list">
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Nominal / Peak Load:</span>
+                                    <span class="mpc-stat-val" id="dss-caltech-load">150.0 kW / 88.80 kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Control Mode Source:</span>
+                                    <span class="mpc-stat-val" id="dss-caltech-source" style="color: var(--neon-cyan);">--</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Peak PV (Avail &rarr; Disp):</span>
+                                    <span class="mpc-stat-val" id="dss-caltech-pv">-- &rarr; -- kW</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Curtailed PV Energy:</span>
+                                    <span class="mpc-stat-val val-amber" id="dss-caltech-curt">-- kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Grid Imported Energy:</span>
+                                    <span class="mpc-stat-val" id="dss-caltech-grid">-- kWh</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Zero Re-Injection Check:</span>
+                                    <span class="mpc-stat-val val-green" id="dss-caltech-pcc">--</span>
+                                </div>
+                                <div class="mpc-stat-row">
+                                    <span class="mpc-stat-label">Common Bus Voltage:</span>
+                                    <span class="mpc-stat-val" id="dss-caltech-volt">[--, --] pu</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- OpenDSS-G Visualizations Gallery -->
+                    <div class="plots-gallery">
+                        <h3>OpenDSS-G 96-Step Time-Mode Visualizations (Classic 4-Figure &amp; Curtailment Dashboard)</h3>
+                        <div class="gallery-tabs" id="opendss-gallery-tabs">
+                            <button class="gallery-tab active" onclick="switchOpenDSSGallery('sm_classic')">🏢 Supermarket (4-Fig Classic)</button>
+                            <button class="gallery-tab" onclick="switchOpenDSSGallery('sm_dash')">🏢 Supermarket (%Pmpp Dashboard)</button>
+                            <button class="gallery-tab" onclick="switchOpenDSSGallery('ev_classic')">⚡ Lidl EV (4-Fig Classic)</button>
+                            <button class="gallery-tab" onclick="switchOpenDSSGallery('ev_dash')">⚡ Lidl EV (%Pmpp Dashboard)</button>
+                            <button class="gallery-tab" onclick="switchOpenDSSGallery('caltech_classic')">🎓 Caltech EV (4-Fig Classic)</button>
+                            <button class="gallery-tab" onclick="switchOpenDSSGallery('caltech_dash')">🎓 Caltech EV (%Pmpp Dashboard)</button>
+                        </div>
+                        <div class="gallery-content">
+                            <div class="gallery-img-container" id="dssgallery-sm_classic">
+                                <img src="/api/plots/dstcp_classic_4figs_supermarket.png" alt="Supermarket Classic 4-Fig" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Supermarket (146.5 kW)'.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="dssgallery-sm_dash">
+                                <img src="/api/plots/dstcp_96step_supermarket.png" alt="Supermarket 96-Step Dashboard" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Supermarket (146.5 kW)'.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="dssgallery-ev_classic">
+                                <img src="/api/plots/dstcp_classic_4figs_ev.png" alt="Lidl EV Classic 4-Fig" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Lidl EV (110 kW)'.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="dssgallery-ev_dash">
+                                <img src="/api/plots/dstcp_96step_ev.png" alt="Lidl EV 96-Step Dashboard" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Lidl EV (110 kW)'.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="dssgallery-caltech_classic">
+                                <img src="/api/plots/dstcp_classic_4figs_caltech_ev.png" alt="Caltech EV Classic 4-Fig" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Caltech EV (150 kW)'.</div>
+                            </div>
+                            <div class="gallery-img-container hidden" id="dssgallery-caltech_dash">
+                                <img src="/api/plots/dstcp_96step_caltech_ev.png" alt="Caltech EV 96-Step Dashboard" class="gallery-img" onerror="imgError(this)">
+                                <div class="img-placeholder">Plot not generated yet. Click 'Run Caltech EV (150 kW)'.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- OpenDSS-G DSTCP Log Terminal -->
+                    <div class="pipeline-terminal">
+                        <div class="terminal-header">
+                            <span>OpenDSS-G DSTCP 96-Step Time-Mode Console Logs (Port 6345)</span>
+                            <button class="btn-copy" onclick="copyLogs('opendss')">Copy Logs</button>
+                        </div>
+                        <div class="console-log full-height" id="log-opendss">
+                            <pre>OpenDSS-G DSTCP step-by-step power flow and %Pmpp curtailment logs will appear here in real time...</pre>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
         <footer class="app-footer">
             <p>Antigravity Powered Battery Management & Optimization System | French Electricity Market (RTE API) Integration</p>
         </footer>

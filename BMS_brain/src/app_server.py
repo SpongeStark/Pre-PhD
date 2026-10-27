@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import socket
 import subprocess
 import threading
 import urllib.parse
@@ -17,6 +18,8 @@ RESULTS_MPC_DIR = ROOT_DIR / "results_mpc"
 RESULTS_MPC_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_RT_DIR = ROOT_DIR / "results_rt"
 RESULTS_RT_DIR.mkdir(parents=True, exist_ok=True)
+RESULTS_DSS_DIR = ROOT_DIR / "results_opendss"
+RESULTS_DSS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Global state to keep track of running scripts
 # Statuses: "idle", "running", "success", "error"
@@ -38,6 +41,10 @@ execution_state = {
     "rt_ev": {"status": "idle", "logs": "", "pid": None},
     "rt_caltech": {"status": "idle", "logs": "", "pid": None},
     "rt_all": {"status": "idle", "logs": "", "pid": None},
+    "opendss_supermarket": {"status": "idle", "logs": "", "pid": None},
+    "opendss_ev": {"status": "idle", "logs": "", "pid": None},
+    "opendss_caltech_ev": {"status": "idle", "logs": "", "pid": None},
+    "opendss_all": {"status": "idle", "logs": "", "pid": None},
     "mpc_equations_tracker": {"status": "idle", "logs": "", "pid": None},
     "forecaster_tuning": {"status": "idle", "logs": "", "pid": None},
     "pipeline": {"status": "idle", "logs": "", "current_step": None, "pid": None}
@@ -65,12 +72,24 @@ SCRIPT_COMMANDS = {
     "rt_ev": [sys.executable, "-u", str(SRC_DIR / "rt_ev.py")],
     "rt_caltech": [sys.executable, "-u", str(SRC_DIR / "rt_caltech.py")],
     "rt_all": [sys.executable, "-u", str(SRC_DIR / "rt_controller.py"), "--mode", "all"],
+    "opendss_supermarket": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "supermarket", "--source", "loadshape"],
+    "opendss_ev": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "ev", "--source", "loadshape"],
+    "opendss_caltech_ev": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "caltech_ev", "--source", "loadshape"],
+    "opendss_all": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "all", "--source", "loadshape"],
     "mpc_equations_tracker": [sys.executable, "-u", str(SRC_DIR / "mpc_equations_tracker.py")]
 }
 
-def run_script_thread(script_key, on_complete=None):
+def check_dstcp_server_online(host="127.0.0.1", port=6345, timeout=0.35) -> bool:
+    """Checks if OpenDSS-G TCP Server (DSTCP) is listening on 127.0.0.1:6345."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+def run_script_thread(script_key, on_complete=None, custom_cmd=None):
     """Executes a single script, capturing logs line-by-line."""
-    cmd = SCRIPT_COMMANDS.get(script_key)
+    cmd = custom_cmd if custom_cmd else SCRIPT_COMMANDS.get(script_key)
     if not cmd:
         with state_lock:
             execution_state[script_key]["status"] = "error"
@@ -81,7 +100,7 @@ def run_script_thread(script_key, on_complete=None):
 
     with state_lock:
         execution_state[script_key]["status"] = "running"
-        execution_state[script_key]["logs"] = f"=== Starting execution of {script_key} ===\n"
+        execution_state[script_key]["logs"] = f"=== Starting execution of {script_key} ===\nCommand: {' '.join(cmd)}\n\n"
 
     try:
         # Run with unbuffered python output (-u) in the root directory
@@ -318,6 +337,26 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(all_metrics).encode('utf-8'))
             return
 
+        # --- API: GET OpenDSS-G DSTCP Metrics & TCP Server Status ---
+        elif path == "/api/opendss/metrics":
+            all_metrics = {
+                "tcp_online": check_dstcp_server_online("127.0.0.1", 6345),
+                "cases": {}
+            }
+            for m in ["supermarket", "ev", "caltech_ev"]:
+                mf = RESULTS_DSS_DIR / f"dstcp_metrics_{m}.json"
+                if mf.exists():
+                    try:
+                        with open(mf, "r", encoding="utf-8") as f:
+                            all_metrics["cases"][m] = json.load(f)
+                    except Exception:
+                        pass
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(all_metrics).encode('utf-8'))
+            return
+
         # --- API: GET MPC Equations Metrics ---
         elif path == "/api/mpc/equations":
             query = urllib.parse.parse_qs(parsed_url.query)
@@ -396,7 +435,13 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                 "mpc_equations_dashboard_supermarket.png": RESULTS_MPC_DIR / "mpc_equations_dashboard_supermarket.png",
                 "mpc_equations_dashboard_caltech_ev.png": RESULTS_MPC_DIR / "mpc_equations_dashboard_caltech_ev.png",
                 "mpc_equations_dashboard_ev.png": RESULTS_MPC_DIR / "mpc_equations_dashboard_ev.png",
-                "mpc_equations_comparison.png": RESULTS_MPC_DIR / "mpc_equations_comparison.png"
+                "mpc_equations_comparison.png": RESULTS_MPC_DIR / "mpc_equations_comparison.png",
+                "dstcp_classic_4figs_supermarket.png": RESULTS_DSS_DIR / "dstcp_classic_4figs_supermarket.png",
+                "dstcp_96step_supermarket.png": RESULTS_DSS_DIR / "dstcp_96step_supermarket.png",
+                "dstcp_classic_4figs_ev.png": RESULTS_DSS_DIR / "dstcp_classic_4figs_ev.png",
+                "dstcp_96step_ev.png": RESULTS_DSS_DIR / "dstcp_96step_ev.png",
+                "dstcp_classic_4figs_caltech_ev.png": RESULTS_DSS_DIR / "dstcp_classic_4figs_caltech_ev.png",
+                "dstcp_96step_caltech_ev.png": RESULTS_DSS_DIR / "dstcp_96step_caltech_ev.png"
             }
             
             file_path = plot_files.get(plot_name)
@@ -496,9 +541,30 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(json.dumps({"error": "Another script is already running."}).encode('utf-8'))
                     return
+
+                # Build dynamic command if running an OpenDSS-G DSTCP script with user-selected options (Mode A / Mode B)
+                custom_cmd = None
+                if script.startswith("opendss_"):
+                    target_mode = script.replace("opendss_", "")
+                    source = data.get("source", "loadshape")
+                    if source not in ("loadshape", "rt", "mpc"):
+                        source = "loadshape"
+                    no_compile = bool(data.get("no_compile", False))
+                    show_plots = bool(data.get("show_plots", False))
+
+                    custom_cmd = [
+                        sys.executable, "-u",
+                        str(SRC_DIR / "opendss_dstcp_controller.py"),
+                        "--mode", target_mode,
+                        "--source", source
+                    ]
+                    if no_compile:
+                        custom_cmd.append("--no-compile")
+                    if show_plots:
+                        custom_cmd.append("--show-plots")
                 
                 # Start script execution in a background thread
-                t = threading.Thread(target=run_script_thread, args=(script,))
+                t = threading.Thread(target=run_script_thread, args=(script, None, custom_cmd))
                 t.daemon = True
                 t.start()
                 

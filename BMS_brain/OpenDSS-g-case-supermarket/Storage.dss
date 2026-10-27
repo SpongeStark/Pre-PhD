@@ -3,4 +3,4 @@
 ! Sizing direct input from Battery Dimensioning System:
 ! Rated Power: 69.31 kW, Energy Capacity: 264.46 kWh
 ! --------------------------------------------------------------------------
-New "Storage.sto_0" phases=3 bus1=n_bat.1.2.3 kv=0.40 kVA=86.64 kWrated=69.31 kWhrated=264.46 kWhstored=132.23 %reserve=20.0 %effcharge=95.0 %effdischarge=95.0 %IdlingkW=0.1 kvarMax=51.98 kvarMaxAbs=51.98 kvar=0.0 WattPriority=Yes daily=bess_dispatch duty=bess_dispatch dispMode=Follow State=IDLING
+New "Storage.sto_0" phases=3 bus1=n_bat.1.2.3 kv=0.40 kVA=72.78 kWrated=69.31 kWhrated=264.46 kWhstored=132.23 %reserve=20.0 %effcharge=95.0 %effdischarge=95.0 %IdlingkW=0.1 kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 daily=bess_dispatch duty=bess_dispatch dispMode=Follow State=IDLING

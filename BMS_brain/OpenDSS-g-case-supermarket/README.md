@@ -20,15 +20,15 @@
 * **Efficiencies:** $\eta_c = 95\%, \eta_d = 95\%$
 
 ## PV Inverter System (3 x Delta M88H Inverters Aggregated)
-* **AC Inverter Rating:** $3 \times 70\text{ kW} = \mathbf{210\text{ kVA}}$ (`kVA=210.0`)
+* **AC Inverter Rating:** $3 \times 70\text{ kW} = \mathbf{210\text{ kVA}}$ (`kVA=210.0`, `PF=1.0`)
 * **DC Panel Peak Rating:** $3 \times 90\text{ kW}_p = \mathbf{270\text{ kW}}_p$ (`Pmpp=270.0`)
 * **Inverter Loading Ratio (ILR):** $270 / 210 = 1.286$
-* **Inverter Power Clipping:** Naturally clips active power at $210\text{ kW}$ (`WattPriority=Yes`)
-* **Reactive Power / PF Compensation:** `kvarMax=126.0`, `kvarMaxAbs=126.0` ($PF = 0.80$ lead/lag capability), `VarFollowInverter=No` for active load reactive power compensation
-* **Smart Inverter Control:** `InvControl.pv_ctrl` (`DERList=[PVSystem.pv_1]`, `mode=VOLTWATT`, `VoltwattYAxis=KVARATINGPU`) for overvoltage curtailment
+* **Hardware Rating Clipping:** Natively clips active power at $210\text{ kW}$ inside `PVSystem.pv_1` (`WattPriority=Yes`)
+* **Active Curtailment & Zero Re-Injection ($P_{grid} \ge 0$):** Driven directly by the Optimizer / RT Controller via `%Pmpp` (no separate `InvControl.dss` loop required)
 * **Startup Power:** $3 \times 150\text{ W} = 450\text{ W}$ (`%Cutin=0.21`)
 
-## Central Inverter Interface & Time-Mode Runner
+## Central Inverter Interface & 96-Step Runner
 * **Virtual Micro-Reactor Line:** `Line.line_reactor` ($R=0.20\,\Omega/\text{km}, X=0.20\,\Omega/\text{km}$, $L=1\text{ m}$, $Normamps=400\text{ A}$)
-* **Time-Mode Simulation Engine:** Executed at 1-second resolution ($86,400\text{ steps/day}$) via `BMS_brain/src/opendss_runner.py`
+* **15-Minute Co-Simulation Engine:** Executed at 15-minute resolution ($96\text{ steps/day}$) via `BMS_brain/src/opendss_runner.py`
+
 

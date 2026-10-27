@@ -111,28 +111,16 @@ New "Line.line_load" phases=3 bus1=n_common.1.2.3 bus2=n_load.1.2.3 r1=0.10 x1=0
 """
 
 # PV System: 3 full Delta M88H inverters aggregated
-# Sizing: 3 x 70 kW = 210 kVA AC rating, 3 x 90 kWp = 270 kWp DC peak rating
-# Inverter Loading Ratio ILR = 270 / 210 = 1.286 (clipping enabled above 210 kW)
+# Sizing: 3 x 70 kW = 210 kVA AC rating, Pmpp = 210.0 kW nominal rating
 # %Cutin = 0.21% (3 x 150 W startup power)
-# Reactive capability: PF 0.80 lead/lag -> kvarMax = 210 * 0.6 = 126.0 kvar
+# Active power curtailment handled natively via %Pmpp (no InvControl needed)
 pv_system = """! 1. MPPT Inverter Efficiency Curve (Delta M88H-121: Peak 98.8%, Euro 98.5%)
 New "XYCurve.mppt_eff" npts=4 xarray=[0.1 0.2 0.5 1.0] yarray=[0.965 0.980 0.988 0.985]
 
 ! 2. Solar PV System on Common Bus (3 x Delta M88H Inverters Aggregated)
-! Supports active power clipping (210 kW) + reactive PF compensation (up to 126 kvar)
-New "PVSystem.pv_1" phases=3 bus1=n_pv.1.2.3 kv=0.40 kVA=210.0 Pmpp=270.0 %Pmpp=100.0 %Cutin=0.21 %Cutout=0.10 EffCurve=mppt_eff kvarMax=126.0 kvarMaxAbs=126.0 kvar=0.0 VarFollowInverter=No ControlMode=GFL WattPriority=Yes daily=solar_shape duty=solar_shape
-"""
-
-# InvControl: Volt-Watt Active Power Curtailment as in EPRI PVSystem_InvControl.pdf
-inv_control = """! --------------------------------------------------------------------------
-! InvControl.dss - Smart Inverter Volt-Watt Power Curtailment / Inverter Clipping
-! Based on EPRI Reference: PVSystem_InvControl.pdf
-! - DERList explicitly targets PVSystem.pv_1
-! - VoltwattYAxis=KVARATINGPU anchors curtailment to the 210 kVA AC rating
-! --------------------------------------------------------------------------
-New "XYCurve.voltwatt_curve" npts=4 xarray=[1.00 1.03 1.06 1.10] yarray=[1.00 1.00 0.20 0.00]
-New "XYCurve.voltvar_curve" npts=6 xarray=[0.90 0.95 0.98 1.02 1.05 1.10] yarray=[1.00 1.00 0.00 0.00 -1.00 -1.00]
-New "InvControl.pv_ctrl" DERList=[PVSystem.pv_1] mode=VOLTWATT voltage_curvex_ref=rated voltwatt_curve=voltwatt_curve VoltwattYAxis=KVARATINGPU DeltaP_factor=0.45
+! Natively rated at 210.0 kW (kVA=210.0, Pmpp=210.0, WattPriority=Yes)
+! Active power curtailment (P_curt) is controlled directly via %Pmpp
+New "PVSystem.pv_1" phases=3 bus1=n_pv.1.2.3 kv=0.40 kVA=210.0 Pmpp=210.0 %Pmpp=100.0 %Cutin=0.21 %Cutout=0.10 EffCurve=mppt_eff kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 ControlMode=GFL WattPriority=Yes daily=solar_shape duty=solar_shape
 """
 
 monitors = """New "Monitor.inv_flow" element=Line.line_reactor terminal=1 mode=1 PPolar=no enabled=true
@@ -160,7 +148,6 @@ Redirect Line.dss
 Redirect Loads.dss
 Redirect PVSystem.dss
 Redirect Storage.dss
-Redirect InvControl.dss
 Redirect SwtControl.dss
 
 Redirect Monitor.dss
@@ -192,9 +179,25 @@ dsp = """V2.0;;;
 14\tELEMENT\tPhases=3--\tTRANSFORMER_YY\t14\t600\t0\txfmr_0\t14\t600\t900\t600\tsbus.1.2.3\tslv.1.2.3\t \t 
 """
 
+def expand_24_to_96(mult_str: str) -> str:
+    """Expands a 24-hour space-separated multiplier string to 96 (15-min) steps."""
+    vals = [v for v in mult_str.split() if v][:24]
+    expanded = []
+    for v in vals:
+        expanded.extend([v] * 4)
+    return " ".join(expanded)
+
+solar_24 = "0.0 0.0 0.0 0.0 0.0099 0.0854 0.2496 0.4567 0.6810 0.8529 0.9604 0.9973 1.0000 0.9602 0.8699 0.7222 0.5223 0.3243 0.1514 0.0318 0.0006 0.0 0.0 0.0"
+bess_24 = "0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 -0.4 -0.8 -1.0 -0.9 -0.6 0.0 0.0 0.3 0.8 1.0 0.9 0.7 0.2 0.0"
+
 for c in cases:
     cdir = base_dir / c["folder"]
     cdir.mkdir(parents=True, exist_ok=True)
+    
+    # Remove InvControl.dss if it exists from previous runs
+    inv_ctrl_file = cdir / "InvControl.dss"
+    if inv_ctrl_file.exists():
+        inv_ctrl_file.unlink()
     
     (cdir / "BusCoords.dss").write_text(bus_coords, encoding="utf-8")
     (cdir / "GISCoords.dss").write_text(gis_coords, encoding="utf-8")
@@ -207,21 +210,19 @@ for c in cases:
     (cdir / "Transformer.dss").write_text(transformer, encoding="utf-8")
     (cdir / "Line.dss").write_text(lines, encoding="utf-8")
     (cdir / "PVSystem.dss").write_text(pv_system, encoding="utf-8")
-    (cdir / "InvControl.dss").write_text(inv_control, encoding="utf-8")
     (cdir / "Monitor.dss").write_text(monitors, encoding="utf-8")
     (cdir / "EnergyMeter.dss").write_text(energy_meter, encoding="utf-8")
     (cdir / "Master.dss").write_text(master, encoding="utf-8")
     (cdir / "Default_project.Dsp").write_text(dsp, encoding="utf-8")
     
-    # Storage sized from battery dimensioning optimizer for the specific case
-    bat_kva = round(c['bat_kw'] * 1.25, 2)
-    bat_kvar = round(c['bat_kw'] * 0.75, 2)
+    # Storage sized from battery dimensioning optimizer for the specific case (pure active power PF=1.0)
+    bat_kva = round(c['bat_kw'] * 1.05, 2)
     storage_content = f"""! --------------------------------------------------------------------------
 ! Storage.dss - {c['name']}
 ! Sizing direct input from Battery Dimensioning System:
 ! Rated Power: {c['bat_kw']} kW, Energy Capacity: {c['bat_kwh']} kWh
 ! --------------------------------------------------------------------------
-New "Storage.sto_0" phases=3 bus1=n_bat.1.2.3 kv=0.40 kVA={bat_kva} kWrated={c['bat_kw']} kWhrated={c['bat_kwh']} kWhstored={c['bat_stored']} %reserve=20.0 %effcharge=95.0 %effdischarge=95.0 %IdlingkW=0.1 kvarMax={bat_kvar} kvarMaxAbs={bat_kvar} kvar=0.0 WattPriority=Yes daily=bess_dispatch duty=bess_dispatch dispMode=Follow State=IDLING
+New "Storage.sto_0" phases=3 bus1=n_bat.1.2.3 kv=0.40 kVA={bat_kva} kWrated={c['bat_kw']} kWhrated={c['bat_kwh']} kWhstored={c['bat_stored']} %reserve=20.0 %effcharge=95.0 %effdischarge=95.0 %IdlingkW=0.1 kvarMax=0.0 kvarMaxAbs=0.0 PF=1.0 daily=bess_dispatch duty=bess_dispatch dispMode=Follow State=IDLING
 """
     (cdir / "Storage.dss").write_text(storage_content, encoding="utf-8")
     
@@ -234,19 +235,22 @@ New "Load.load_1" phases=3 bus1=n_load.1.2.3 kV=0.40 kW={c['load_kw']} pf={c['lo
 """
     (cdir / "Loads.dss").write_text(loads_content, encoding="utf-8")
     
-    # Case-specific LoadShape.dss
+    # Case-specific LoadShape.dss (96 steps of 15 minutes = minterval=15)
+    load_96 = expand_24_to_96(c['shape_mult'])
+    solar_96 = expand_24_to_96(solar_24)
+    bess_96 = expand_24_to_96(bess_24)
     load_shape_content = f"""! --------------------------------------------------------------------------
-! LoadShape.dss - {c['name']}
+! LoadShape.dss - {c['name']} (96 steps, 15-minute intervals = minterval=15)
 ! --------------------------------------------------------------------------
 
 ! 1. Target Demand Profile ({c['load_desc']})
-New "LoadShape.target_load_shape" npts=24 interval=1.0 mult=[{c['shape_mult']}]
+New "LoadShape.target_load_shape" npts=96 minterval=15 mult=[{load_96}]
 
 ! 2. Solar PV Generation Shape (3 x Delta M88H Inverters)
-New "LoadShape.solar_shape" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0099 0.0854 0.2496 0.4567 0.6810 0.8529 0.9604 0.9973 1.0000 0.9602 0.8699 0.7222 0.5223 0.3243 0.1514 0.0318 0.0006 0.0 0.0 0.0]
+New "LoadShape.solar_shape" npts=96 minterval=15 mult=[{solar_96}]
 
 ! 3. Battery Storage Dispatch Shape
-New "LoadShape.bess_dispatch" npts=24 interval=1.0 mult=[0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 -0.4 -0.8 -1.0 -0.9 -0.6 0.0 0.0 0.3 0.8 1.0 0.9 0.7 0.2 0.0 0.0]
+New "LoadShape.bess_dispatch" npts=96 minterval=15 mult=[{bess_96}]
 """
     (cdir / "LoadShape.dss").write_text(load_shape_content, encoding="utf-8")
-    print(f"Successfully generated 3-inverter circuit for: {c['folder']}")
+    print(f"Successfully generated simplified 96-step circuit for: {c['folder']}")
