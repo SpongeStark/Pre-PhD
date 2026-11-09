@@ -2,7 +2,7 @@
 Real-Time (RT) Secondary Microgrid Controller
 ==============================================
 Implements real-time closed-loop secondary power compensation between consecutive
-MPC execution steps over a 2-day (48-hour = 192 steps) evaluation horizon.
+MPC execution steps over a unified 24-hour (96-step, 15-minute interval) horizon.
 
 Hierarchical 4-Layer Control Architecture:
   1. Layer 1: Error Tolerance Deadband (epsilon_tol = 0.5 kW)
@@ -39,8 +39,215 @@ from mpc_optimizer import (
     fetch_or_load_tariffs,
     get_forecast_and_actual_trajectories,
     solve_mpc_optimization,
+    resolve_valid_start_date,
     DEFAULT_SIZING
 )
+
+
+class RealTimeStepCompensator:
+    """
+    Stateful 4-Layer Real-Time Secondary Controller that can be executed step-by-step
+    either in standalone simulation (`run_rt_compensation`) or inside the live
+    OpenDSS-G DSTCP closed-loop Digital Twin (`opendss_dstcp_controller.py`).
+    """
+
+    def __init__(
+        self,
+        sizing_params: dict,
+        dt: float = 0.25,
+        soc_init: float = 0.50,
+        epsilon_tol: float = 0.50,
+        ramp_limit_fraction: float = 0.50,
+        initial_p_bat: float = 0.0
+    ):
+        self.E_B_max = float(sizing_params["E_B_max"])
+        self.P_B_max = float(sizing_params["P_B_max"])
+        self.dt = float(dt)
+        self.epsilon_tol = float(epsilon_tol)
+        self.ramp_limit_fraction = float(ramp_limit_fraction)
+        self.delta_P_ramp_max = self.ramp_limit_fraction * self.P_B_max
+
+        # Technical efficiencies
+        self.eta_pvinverter = 0.99
+        self.eta_mppt = 0.99
+        self.eta_acdc = 0.99
+        self.eta_dcac = 0.99
+        self.eta_c = 0.95
+        self.eta_d = 0.95
+
+        self.SoC_min = 0.20
+        self.SoC_max = 0.90
+
+        # Stateful history across 15-min steps
+        self.current_e_b = soc_init * self.E_B_max
+        self.p_bat_prev = float(initial_p_bat)
+        self.err_history = []
+
+    def compute_step(
+        self,
+        k: int,
+        pv_meas_kw: float,
+        load_meas_kw: float,
+        pv_fcast_kw: float,
+        load_fcast_kw: float,
+        sch_ch_kw: float,
+        sch_dis_kw: float,
+        sch_grid_kw: float = 0.0,
+        current_eb_kwh: float = None
+    ) -> dict:
+        """
+        Computes the 4-layer real-time secondary control response for a single 15-min step `k`
+        given physical PV/Load measurements (`pv_meas_kw`, `load_meas_kw`) and the MPC
+        day-ahead schedule (`pv_fcast_kw`, `load_fcast_kw`, `sch_ch_kw`, `sch_dis_kw`).
+        """
+        if current_eb_kwh is not None:
+            self.current_e_b = float(np.clip(
+                current_eb_kwh,
+                self.SoC_min * self.E_B_max,
+                self.SoC_max * self.E_B_max
+            ))
+
+        e_b_start = self.current_e_b
+        soc_start = e_b_start / self.E_B_max if self.E_B_max > 0 else 0.50
+
+        # 1. Physical Measurements and Forecast Deviations
+        delta_pv = float(pv_meas_kw) - float(pv_fcast_kw)
+        delta_load = float(load_meas_kw) - float(load_fcast_kw)
+
+        # Net instantaneous DC Bus Mismatch:
+        # P_Error(k) = (Delta P_PV * eta_mppt) - (Delta P_load / eta_dcac)
+        err_raw = (delta_pv * self.eta_mppt) - (delta_load / self.eta_dcac)
+        self.err_history.append(err_raw)
+
+        # 2. Scenario Classification
+        if err_raw < -self.epsilon_tol:
+            if delta_pv < 0 and delta_load > 0:
+                scen = "Deficit Case 1 (Double Deficit)"
+            elif delta_pv < 0 and delta_load <= 0:
+                scen = "Deficit Case 2 (Solar Drop Dominates)"
+            else:
+                scen = "Deficit Case 3 (Load Surge Dominates)"
+        elif err_raw > self.epsilon_tol:
+            if delta_pv > 0 and delta_load < 0:
+                scen = "Surplus Case 1 (Double Surplus)"
+            elif delta_pv <= 0 and delta_load < 0:
+                scen = "Surplus Case 2 (Load Drop Dominates)"
+            else:
+                scen = "Surplus Case 3 (Solar Gain Dominates)"
+        else:
+            scen = "Deadband Balanced"
+
+        # 3. Layer 2: 3-State History Filtering
+        n_hist = len(self.err_history)
+        if n_hist == 1:
+            err_filt = err_raw
+        elif n_hist == 2:
+            err_filt = (0.5 * err_raw + 0.3 * self.err_history[-2]) / 0.8
+        else:
+            err_filt = 0.5 * err_raw + 0.3 * self.err_history[-2] + 0.2 * self.err_history[-3]
+
+        # 4. Layer 1: Deadband Thresholding
+        comp_error = 0.0 if abs(err_filt) <= self.epsilon_tol else err_filt
+
+        # 5. Layer 3: Merit-Order Energy Hierarchy & Physical Headroom Allocation
+        pv_gen_dc = (float(pv_meas_kw) / self.eta_pvinverter) * self.eta_mppt
+        load_dem_dc = float(load_meas_kw) / self.eta_dcac
+        p_phys_net = pv_gen_dc - load_dem_dc  # > 0: physical excess solar, <= 0: physical deficit
+
+        avail_dis_energy = max(0.0, ((e_b_start - self.SoC_min * self.E_B_max) / self.dt) * self.eta_d)
+        avail_ch_energy = max(0.0, ((self.SoC_max * self.E_B_max - e_b_start) / (self.dt * self.eta_c)))
+
+        if comp_error < -self.epsilon_tol:
+            # === DEFICIT REGIME: Missing generation or demand surge ===
+            p_deficit = abs(comp_error)
+
+            # Merit Order Step 1: Immediately cancel/reduce scheduled battery charging
+            if sch_ch_kw > 0.0:
+                cancelled_ch = min(p_deficit, sch_ch_kw)
+                target_ch = sch_ch_kw - cancelled_ch
+                p_deficit_rem = p_deficit - cancelled_ch
+            else:
+                target_ch = 0.0
+                p_deficit_rem = p_deficit
+
+            # Merit Order Step 2: Discharge battery to cover remaining deficit
+            avail_dis = max(0.0, min(
+                self.P_B_max - sch_dis_kw,
+                avail_dis_energy,
+                load_dem_dc - sch_dis_kw
+            ))
+            delta_dis = min(p_deficit_rem, avail_dis)
+            target_dis = sch_dis_kw + delta_dis
+
+        elif comp_error > self.epsilon_tol:
+            # === SURPLUS REGIME: Excess solar or load drop ===
+            p_surplus = comp_error
+
+            if p_phys_net > 0.0:
+                # Subcase A: GENUINE PHYSICAL EXCESS SOLAR (PV > Load on DC Bus)
+                target_dis = 0.0
+                avail_ch = max(0.0, min(self.P_B_max, avail_ch_energy))
+                target_ch = min(p_phys_net, avail_ch)
+            else:
+                # Subcase B: LOAD DROP / NO PHYSICAL EXCESS SOLAR
+                if sch_dis_kw > 0.0:
+                    reduced_dis = min(p_surplus, sch_dis_kw)
+                    target_dis = sch_dis_kw - reduced_dis
+                else:
+                    target_dis = 0.0
+                target_ch = min(sch_ch_kw, avail_ch_energy)
+        else:
+            # === DEADBAND BALANCED REGIME (|comp_error| <= epsilon_tol) ===
+            target_dis = min(sch_dis_kw, avail_dis_energy, load_dem_dc)
+            target_ch = min(sch_ch_kw, avail_ch_energy)
+
+        # 6. Layer 4: Inverter Ramp-Rate Limiting on net battery power
+        target_p_bat = target_dis - target_ch
+        clamped_p_bat = float(np.clip(
+            target_p_bat,
+            self.p_bat_prev - self.delta_P_ramp_max,
+            self.p_bat_prev + self.delta_P_ramp_max
+        ))
+
+        if clamped_p_bat >= 0.0:
+            act_dis = min(clamped_p_bat, avail_dis_energy, load_dem_dc)
+            act_ch = 0.0
+        else:
+            act_dis = 0.0
+            act_ch = min(-clamped_p_bat, avail_ch_energy)
+
+        # Exact DC Bus Power Balance:
+        p_net_needed = load_dem_dc + act_ch - act_dis - pv_gen_dc
+        if p_net_needed > 0.0:
+            act_grid = p_net_needed / self.eta_acdc
+            act_curt = 0.0
+        else:
+            act_grid = 0.0
+            act_curt = -p_net_needed
+
+        # Update battery energy state for next interval
+        self.current_e_b = float(np.clip(
+            e_b_start + (act_ch * self.eta_c - act_dis / self.eta_d) * self.dt,
+            self.SoC_min * self.E_B_max,
+            self.SoC_max * self.E_B_max
+        ))
+        self.p_bat_prev = act_dis - act_ch
+        soc_end = self.current_e_b / self.E_B_max if self.E_B_max > 0 else 0.50
+
+        return {
+            "act_ch_kw": float(act_ch),
+            "act_dis_kw": float(act_dis),
+            "act_grid_kw": float(act_grid),
+            "act_curt_kw": float(act_curt),
+            "err_raw_kw": float(err_raw),
+            "err_filt_kw": float(err_filt),
+            "scenario": scen,
+            "e_b_start_kwh": float(e_b_start),
+            "soc_start": float(soc_start),
+            "e_b_end_kwh": float(self.current_e_b),
+            "soc_end": float(soc_end),
+        }
+
 
 def run_rt_compensation(
     mode: str,
@@ -55,7 +262,8 @@ def run_rt_compensation(
     dt: float = 0.25,
     soc_init: float = 0.50,
     epsilon_tol: float = 0.50,
-    ramp_limit_fraction: float = 0.50
+    ramp_limit_fraction: float = 0.50,
+    start_date: str = ""
 ):
     """
     Simulates real-time closed-loop secondary control step-by-step across all N_p intervals.
@@ -63,34 +271,28 @@ def run_rt_compensation(
     N_p = len(pv_forecast)
     E_B_max = float(sizing_params["E_B_max"])
     P_B_max = float(sizing_params["P_B_max"])
-    
+
     # Technical efficiencies
     eta_pvinverter = 0.99
     eta_mppt = 0.99
     eta_acdc = 0.99
     eta_dcac = 0.99
-    eta_c = 0.95
-    eta_d = 0.95
-    
-    SoC_min = 0.20
-    SoC_max = 0.90
-    
-    # Layer 4 Ramp Limit: maximum power delta per interval
+
     delta_P_ramp_max = ramp_limit_fraction * P_B_max
-    
+
     # Degradation Cost Model parameters
     C_0 = 500.0 * E_B_max + 100.0 * P_B_max
     CF_max = 0.20
     alpha = 0.05
     beta = 0.01
-    
+
     # Scheduled MPC Setpoints
     p_grid_sch = dispatch_mpc_df["P_grid_sch_kW"].values
     p_ch_sch = dispatch_mpc_df["P_ch_sch_kW"].values
     p_dis_sch = dispatch_mpc_df["P_dis_sch_kW"].values
     soc_sch = dispatch_mpc_df["SoC_sch"].values
     e_b_sch = dispatch_mpc_df["E_B_sch_kWh"].values
-    
+
     # Real-Time Trajectory Containers
     p_grid_rt = np.zeros(N_p)
     p_ch_rt = np.zeros(N_p)
@@ -98,208 +300,67 @@ def run_rt_compensation(
     p_curt_rt = np.zeros(N_p)
     e_b_rt = np.zeros(N_p)
     soc_rt = np.zeros(N_p)
-    
-    # Error signals
+
     p_error_raw = np.zeros(N_p)
     p_error_filtered = np.zeros(N_p)
     scenario_tags = []
-    
-    # Initial state
-    current_e_b = soc_init * E_B_max
-    p_bat_prev = p_dis_sch[0] - p_ch_sch[0]  # Initial net battery power (+ for discharge)
-    
-    print(f"\n--- Executing RT Secondary Controller Simulation ({N_p} steps, Mode: {mode.upper()}) ---")
+
+    compensator = RealTimeStepCompensator(
+        sizing_params=sizing_params,
+        dt=dt,
+        soc_init=soc_init,
+        epsilon_tol=epsilon_tol,
+        ramp_limit_fraction=ramp_limit_fraction,
+        initial_p_bat=float(p_dis_sch[0] - p_ch_sch[0])
+    )
+
+    print(f"\n--- Executing RT Secondary Controller Simulation ({N_p} steps = {N_p*dt:.0f}h, Mode: {mode.upper()}) ---")
     print(f"  Battery Sizing : Capacity={E_B_max:.2f} kWh, Rated Power={P_B_max:.2f} kW")
     print(f"  Ramp Limit     : {delta_P_ramp_max:.2f} kW / 15-min ({ramp_limit_fraction*100:.0f}% of P_B_max)")
     print(f"  Error Deadband : +/- {epsilon_tol:.2f} kW")
-    
+
     for k in range(N_p):
-        # 1. Physical Measurements and Forecast Deviations
-        delta_pv = pv_actual[k] - pv_forecast[k]
-        delta_load = load_actual[k] - load_forecast[k]
-        
-        # Net instantaneous DC Bus Mismatch:
-        # P_Error(k) = (Delta P_PV * eta_mppt) - (Delta P_load / eta_dcac)
-        err_raw = (delta_pv * eta_mppt) - (delta_load / eta_dcac)
-        p_error_raw[k] = err_raw
-        
-        # 2. Scenario Classification
-        if err_raw < -epsilon_tol:
-            if delta_pv < 0 and delta_load > 0:
-                scen = "Deficit Case 1 (Double Deficit)"
-            elif delta_pv < 0 and delta_load <= 0:
-                scen = "Deficit Case 2 (Solar Drop Dominates)"
-            else:
-                scen = "Deficit Case 3 (Load Surge Dominates)"
-        elif err_raw > epsilon_tol:
-            if delta_pv > 0 and delta_load < 0:
-                scen = "Surplus Case 1 (Double Surplus)"
-            elif delta_pv <= 0 and delta_load < 0:
-                scen = "Surplus Case 2 (Load Drop Dominates)"
-            else:
-                scen = "Surplus Case 3 (Solar Gain Dominates)"
-        else:
-            scen = "Deadband Balanced"
-        scenario_tags.append(scen)
-        
-        # 3. Layer 2: 3-State History Filtering
-        if k == 0:
-            err_filt = err_raw
-        elif k == 1:
-            err_filt = (0.5 * err_raw + 0.3 * p_error_raw[0]) / 0.8
-        else:
-            err_filt = 0.5 * err_raw + 0.3 * p_error_raw[k-1] + 0.2 * p_error_raw[k-2]
-        p_error_filtered[k] = err_filt
-        
-        # 4. Layer 1 Deadband Thresholding
-        if abs(err_filt) <= epsilon_tol:
-            comp_error = 0.0
-        else:
-            comp_error = err_filt
-            
-        # 5. Layer 3: Merit-Order Energy Hierarchy & Physical Headroom Allocation
-        sch_grid = p_grid_sch[k]
-        sch_ch = p_ch_sch[k]
-        sch_dis = p_dis_sch[k]
-        
-        # Local DC bus flows
-        pv_gen_dc = (pv_actual[k] / eta_pvinverter) * eta_mppt
-        load_dem_dc = load_actual[k] / eta_dcac
-        p_phys_net = pv_gen_dc - load_dem_dc  # > 0: physical excess solar, <= 0: physical deficit
-        
-        # Physical energy headroom limits
-        avail_dis_energy = max(0.0, ((current_e_b - SoC_min * E_B_max) / dt) * eta_d)
-        avail_ch_energy = max(0.0, ((SoC_max * E_B_max - current_e_b) / (dt * eta_c)))
-
-        if comp_error < -epsilon_tol:
-            # === DEFICIT REGIME: Missing generation or demand surge ===
-            p_deficit = abs(comp_error)
-            
-            # Merit Order Step 1: Immediately cancel/reduce scheduled battery charging
-            if sch_ch > 0.0:
-                cancelled_ch = min(p_deficit, sch_ch)
-                target_ch = sch_ch - cancelled_ch
-                p_deficit_rem = p_deficit - cancelled_ch
-            else:
-                target_ch = 0.0
-                p_deficit_rem = p_deficit
-                
-            # Merit Order Step 2: Discharge battery to cover remaining deficit
-            # Constrained by converter rating (P_B_max - sch_dis), available stored energy,
-            # and actual DC load demand ceiling (cannot discharge more than building consumes)
-            avail_dis = max(0.0, min(
-                P_B_max - sch_dis,
-                avail_dis_energy,
-                load_dem_dc - sch_dis
-            ))
-            delta_dis = min(p_deficit_rem, avail_dis)
-            target_dis = sch_dis + delta_dis
-            
-        elif comp_error > epsilon_tol:
-            # === SURPLUS REGIME: Excess solar or load drop ===
-            p_surplus = comp_error
-            
-            if p_phys_net > 0.0:
-                # Subcase A: GENUINE PHYSICAL EXCESS SOLAR (PV > Load on DC Bus)
-                # Merit Order Step 1: Grid import is zero
-                # Merit Order Step 2: Battery discharge is eliminated
-                target_dis = 0.0
-                # Merit Order Step 3: Charge battery using physical excess solar
-                avail_ch = max(0.0, min(P_B_max, avail_ch_energy))
-                target_ch = min(p_phys_net, avail_ch)
-                # Merit Order Step 4: Any excess solar beyond target_ch is curtailed
-            else:
-                # Subcase B: LOAD DROP / NO PHYSICAL EXCESS SOLAR (Night/evening load reduction)
-                # Building still consumes net power (load_dem_dc >= pv_gen_dc).
-                # There is NO physical excess solar to charge the battery!
-                # Merit Order Step 1: Reduce scheduled discharge if active (preserves stored energy)
-                if sch_dis > 0.0:
-                    reduced_dis = min(p_surplus, sch_dis)
-                    target_dis = sch_dis - reduced_dis
-                else:
-                    target_dis = 0.0
-                # Merit Order Step 2: Maintain scheduled charge only if explicitly planned by MPC,
-                # but NEVER initiate unscheduled grid charging from a forecast error!
-                target_ch = min(sch_ch, avail_ch_energy)
-                # Grid import will automatically reduce at the DC bus slack!
-                
-        else:
-            # === DEADBAND BALANCED REGIME (|comp_error| <= epsilon_tol) ===
-            # Follow scheduled setpoints within current physical boundaries
-            target_dis = min(sch_dis, avail_dis_energy, load_dem_dc)
-            target_ch = min(sch_ch, avail_ch_energy)
-
-        # Layer 4: Inverter Ramp-Rate Limiting on net battery power
-        target_p_bat = target_dis - target_ch
-        clamped_p_bat = np.clip(
-            target_p_bat,
-            p_bat_prev - delta_P_ramp_max,
-            p_bat_prev + delta_P_ramp_max
+        step_out = compensator.compute_step(
+            k=k,
+            pv_meas_kw=pv_actual[k],
+            load_meas_kw=load_actual[k],
+            pv_fcast_kw=pv_forecast[k],
+            load_fcast_kw=load_forecast[k],
+            sch_ch_kw=p_ch_sch[k],
+            sch_dis_kw=p_dis_sch[k],
+            sch_grid_kw=p_grid_sch[k]
         )
-        
-        # Decompose into physical discharging and charging commands
-        if clamped_p_bat >= 0.0:
-            act_dis = min(clamped_p_bat, avail_dis_energy, load_dem_dc)
-            act_ch = 0.0
-        else:
-            act_dis = 0.0
-            act_ch = min(-clamped_p_bat, avail_ch_energy)
 
-        # Exact DC Bus Power Balance:
-        # Inflows: pv_gen_dc + act_grid * eta_acdc + act_dis
-        # Outflows: load_dem_dc + act_ch + act_curt
-        # Solve for slack: p_net_needed = load_dem_dc + act_ch - act_dis - pv_gen_dc
-        p_net_needed = load_dem_dc + act_ch - act_dis - pv_gen_dc
-        
-        if p_net_needed > 0.0:
-            # Power deficit on DC bus: electrical grid supplies the exact balance
-            act_grid = p_net_needed / eta_acdc
-            act_curt = 0.0
-        else:
-            # Power surplus on DC bus: zero grid re-injection constraint (P_grid >= 0)
-            # Throttling PV inverter curtails the exact surplus
-            act_grid = 0.0
-            act_curt = -p_net_needed
-                
-        # Store RT Setpoints
-        p_grid_rt[k] = act_grid
-        p_ch_rt[k] = act_ch
-        p_dis_rt[k] = act_dis
-        p_curt_rt[k] = act_curt
-        e_b_rt[k] = current_e_b
-        soc_rt[k] = current_e_b / E_B_max
-        
-        # Update physical battery energy state for next interval
-        current_e_b = current_e_b + (act_ch * eta_c - act_dis / eta_d) * dt
-        # Enforce numerical bounds
-        current_e_b = np.clip(current_e_b, SoC_min * E_B_max, SoC_max * E_B_max)
-        
-        # Update previous battery power for next step's ramp check
-        p_bat_prev = act_dis - act_ch
-        
+        p_grid_rt[k] = step_out["act_grid_kw"]
+        p_ch_rt[k] = step_out["act_ch_kw"]
+        p_dis_rt[k] = step_out["act_dis_kw"]
+        p_curt_rt[k] = step_out["act_curt_kw"]
+        e_b_rt[k] = step_out["e_b_start_kwh"]
+        soc_rt[k] = step_out["soc_start"]
+        p_error_raw[k] = step_out["err_raw_kw"]
+        p_error_filtered[k] = step_out["err_filt_kw"]
+        scenario_tags.append(step_out["scenario"])
+
     # 6. Physical DC Bus Balance Validation
-    # Inflows: PV * eta_mppt / eta_pvinverter + P_grid * eta_acdc + P_dis
-    # Outflows: P_load / eta_dcac + P_ch + P_curt
     inflows = (pv_actual / eta_pvinverter) * eta_mppt + p_grid_rt * eta_acdc + p_dis_rt
     outflows = (load_actual / eta_dcac) + p_ch_rt + p_curt_rt
     residual_mismatch = inflows - outflows
     max_res_error = np.max(np.abs(residual_mismatch))
     mean_res_error = np.mean(np.abs(residual_mismatch))
-    
+
     print(f"\nPhysical DC Bus Balance Verification:")
     print(f"  Max Residual DC Mismatch  : {max_res_error:.8f} kW")
     print(f"  Mean Residual DC Mismatch : {mean_res_error:.8f} kW")
     print(f"  Status: {'PERFECT BALANCE [PASSED]' if max_res_error < 1e-4 else 'WARNING: Balance Drift'}")
-    
+
     # 7. Degradation and Economic Comparison (MPC vs. RT)
-    # MPC Costs
     mpc_grid_cost = float(np.sum(p_grid_sch * dt * tariffs))
     c_soc_mpc = np.array([C_0 * (alpha * soc_sch[k] - beta) / (CF_max * 15.0 * 8760.0) * dt for k in range(N_p)])
     delta_L_mpc = (p_dis_sch * dt) / E_B_max
     n_tot_mpc = (1.06 * (delta_L_mpc**4) - 2.80 * (delta_L_mpc**3) + 2.66 * (delta_L_mpc**2) - 1.07 * delta_L_mpc + 0.17) * 1e5
     c_dod_mpc = np.array([C_0 * (delta_L_mpc[k] / n_tot_mpc[k]) for k in range(N_p)])
     mpc_deg_cost = float(np.sum(c_soc_mpc + c_dod_mpc))
-    
+
     # RT Actual Costs
     rt_grid_cost = float(np.sum(p_grid_rt * dt * tariffs))
     c_soc_rt = np.array([C_0 * (alpha * soc_rt[k] - beta) / (CF_max * 15.0 * 8760.0) * dt for k in range(N_p)])
@@ -309,12 +370,12 @@ def run_rt_compensation(
     rt_soc_cost = float(np.sum(c_soc_rt))
     rt_dod_cost = float(np.sum(c_dod_rt))
     rt_deg_cost = rt_soc_cost + rt_dod_cost
-    
+
     rt_curt_kwh = float(np.sum(p_curt_rt * dt))
     rt_grid_kwh = float(np.sum(p_grid_rt * dt))
     rt_dis_kwh = float(np.sum(p_dis_rt * dt))
     rt_ch_kwh = float(np.sum(p_ch_rt * dt))
-    
+
     # Build complete timeseries dataframe
     rt_df = pd.DataFrame({
         "timestamp": time_index.strftime("%Y-%m-%d %H:%M:%S"),
@@ -339,16 +400,17 @@ def run_rt_compensation(
         "P_curt_rt_kW": p_curt_rt,
         "residual_mismatch_kW": residual_mismatch
     })
-    
+
     # Statistical case counts
     case_counts = pd.Series(scenario_tags).value_counts().to_dict()
     deficit_count = int(np.sum(p_error_filtered < -epsilon_tol))
     surplus_count = int(np.sum(p_error_filtered > epsilon_tol))
     deadband_count = N_p - deficit_count - surplus_count
-    
+
     summary = {
         "mode": mode,
         "name": sizing_params["name"],
+        "date": start_date,
         "horizon_steps": N_p,
         "horizon_hours": N_p * dt,
         "deadband_kw": epsilon_tol,
@@ -395,8 +457,9 @@ def run_rt_compensation(
             "perfect_balance": bool(max_res_error < 1e-4)
         }
     }
-    
+
     return rt_df, summary
+
 
 def plot_rt_results(mode: str, time_index: pd.DatetimeIndex, rt_df: pd.DataFrame, sizing: dict, summary: dict, save_path: Path):
     """
@@ -415,7 +478,11 @@ def plot_rt_results(mode: str, time_index: pd.DatetimeIndex, rt_df: pd.DataFrame
         ax.tick_params(colors="#1e293b", labelsize=9)
         for spine in ax.spines.values():
             spine.set_color("#cbd5e1")
-            
+
+    date_str = summary.get("date", "")
+    hrs_total = int(summary.get("horizon_hours", 24))
+    steps_total = int(summary.get("horizon_steps", 96))
+
     # Panel 1: Generation & Load
     ax1 = axes[0]
     ax1.plot(time_index, rt_df["P_PV_actual_kW"], color="#d97706", linewidth=1.8, label="PV Actual (Meas)")
@@ -423,9 +490,12 @@ def plot_rt_results(mode: str, time_index: pd.DatetimeIndex, rt_df: pd.DataFrame
     ax1.plot(time_index, rt_df["P_load_actual_kW"], color="#dc2626", linewidth=1.8, label="Load Actual (Meas)")
     ax1.plot(time_index, rt_df["P_load_forecast_kW"], color="#f87171", linestyle="--", linewidth=1.4, alpha=0.9, label="Load Forecast (Day-Ahead)")
     ax1.set_ylabel("Power (kW)", color="#0f172a", fontsize=10, fontweight="bold")
-    ax1.set_title(f"2-Day Real-Time Secondary Control: {sizing['name']} (48 Hours)", color="#0f172a", fontsize=12, fontweight="bold", pad=8)
+    ax1.set_title(
+        f"Real-Time Secondary Control ({hrs_total}h / {steps_total} Steps | Date: {date_str}): {sizing['name']}",
+        color="#0f172a", fontsize=12, fontweight="bold", pad=8
+    )
     ax1.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
-    
+
     # Panel 2: DC Bus Forecast Error
     ax2 = axes[1]
     ax2.plot(time_index, rt_df["P_Error_raw_kW"], color="#94a3b8", linewidth=1.0, alpha=0.7, label="P_Error Raw Mismatch")
@@ -436,10 +506,9 @@ def plot_rt_results(mode: str, time_index: pd.DatetimeIndex, rt_df: pd.DataFrame
     ax2.fill_between(time_index, -0.5, 0.5, color="#10b981", alpha=0.15)
     ax2.set_ylabel("DC Mismatch (kW)", color="#0f172a", fontsize=10, fontweight="bold")
     ax2.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
-    
+
     # Panel 3: Battery Power Dispatch (MPC vs RT)
     ax3 = axes[2]
-    # Net battery power: P_dis - P_ch
     p_bat_sch = rt_df["P_dis_sch_kW"] - rt_df["P_ch_sch_kW"]
     p_bat_rt = rt_df["P_dis_rt_kW"] - rt_df["P_ch_rt_kW"]
     ax3.plot(time_index, p_bat_sch, color="#7c3aed", linestyle="--", linewidth=1.5, label="MPC Net Battery (Planned)")
@@ -448,7 +517,7 @@ def plot_rt_results(mode: str, time_index: pd.DatetimeIndex, rt_df: pd.DataFrame
     ax3.axhline(-sizing["P_B_max"], color="#2563eb", linestyle=":", linewidth=1.0, label=f"-P_B_max (-{sizing['P_B_max']:.1f} kW)")
     ax3.set_ylabel("Battery P (kW)", color="#0f172a", fontsize=10, fontweight="bold")
     ax3.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
-    
+
     # Panel 4: Battery State of Charge
     ax4 = axes[3]
     ax4.plot(time_index, rt_df["SoC_sch"], color="#7c3aed", linestyle="--", linewidth=1.5, label="MPC Planned SoC")
@@ -458,59 +527,58 @@ def plot_rt_results(mode: str, time_index: pd.DatetimeIndex, rt_df: pd.DataFrame
     ax4.set_ylabel("Battery SoC", color="#0f172a", fontsize=10, fontweight="bold")
     ax4.set_ylim(0.15, 0.95)
     ax4.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
-    
+
     # Panel 5: Grid Import & Curtailment
     ax5 = axes[4]
     ax5.plot(time_index, rt_df["P_grid_sch_kW"], color="#475569", linestyle="--", linewidth=1.4, label="MPC Grid Import (Planned)")
     ax5.plot(time_index, rt_df["P_grid_rt_kW"], color="#0284c7", linewidth=1.8, label="RT Grid Import (Actual)")
     ax5.plot(time_index, rt_df["P_curt_rt_kW"], color="#db2777", linewidth=1.5, label="RT PV Curtailment (Throttled)")
     ax5.set_ylabel("Grid / Curt (kW)", color="#0f172a", fontsize=10, fontweight="bold")
-    ax5.set_xlabel("Operational Time Horizon (15-Minute Intervals)", color="#0f172a", fontsize=10, fontweight="bold")
+    ax5.set_xlabel(f"Operational Time Horizon (15-Minute Intervals on {date_str})", color="#0f172a", fontsize=10, fontweight="bold")
     ax5.legend(loc="upper right", framealpha=0.95, facecolor="#ffffff", edgecolor="#cbd5e1", labelcolor="#0f172a", fontsize=8)
-    
-    # Format x-axis dates nicely
+
     ax5.xaxis.set_major_formatter(mdates.DateFormatter("%b %d\n%H:%M"))
-    
+
     plt.tight_layout()
     plt.savefig(save_path, dpi=200, facecolor="#ffffff", edgecolor="none")
     plt.close()
     print(f"Saved 5-panel RT schedule visualization to {save_path}")
 
+
 def run_rt_pipeline(
     mode: str = "supermarket",
     start_date: str = None,
-    horizon: int = 192,
+    horizon: int = 96,
     soc_init: float = 0.50,
     epsilon_tol: float = 0.50,
     ramp_limit_fraction: float = 0.50
 ):
     """
-    End-to-end pipeline:
-      1. Solves 2-Day MPC (192 steps) to get baseline scheduled setpoints.
+    End-to-end 24-hour (96-step) pipeline:
+      1. Solves 24-Hour Day-Ahead MPC (96 steps) to get baseline scheduled setpoints.
       2. Executes RT secondary controller step-by-step with real measurements.
       3. Validates DC bus power balance.
       4. Saves metrics JSON, timeseries CSV, and 5-panel plot in results_rt/.
     """
     print(f"\n========================================================")
-    print(f" STARTING 2-DAY REAL-TIME CONTROLLER: {mode.upper()}")
+    print(f" STARTING 24-HOUR REAL-TIME CONTROLLER: {mode.upper()}")
     print(f"========================================================")
-    
+
     # 1. Battery Sizing
     sizing = load_battery_sizing(mode)
-    
-    # 2. Evaluation Dates (Default: First 2 unseen test days)
-    if start_date is None:
-        start_date = "2022-11-01" if mode == "caltech_ev" else "2024-10-01"
+
+    # 2. Evaluation Date (Default: 2024-10-24 for 2024 assets, 2022-11-01 for Caltech)
+    start_date = resolve_valid_start_date(mode, start_date)
     year = pd.to_datetime(start_date).year
-    
-    # 3. Forecast and Ground Truth Trajectories (192 steps = 48 hours = 2 days)
+
+    # 3. Forecast and Ground Truth Trajectories (96 steps = 24 hours = 1 day ahead)
     time_index, pv_f, pv_act, load_f, load_act = get_forecast_and_actual_trajectories(mode, start_date, horizon)
-    
-    # 4. Electricity Tariffs for 192 steps
+
+    # 4. Electricity Tariffs for 96 steps
     tariffs, _ = fetch_or_load_tariffs(year, start_date, steps=horizon)
-    
-    # 5. Solve 2-Day Operational MPC Baseline
-    print(f"\nSolving 2-Day Lookahead MPC Baseline (N_p = {horizon} steps)...")
+
+    # 5. Solve 24-Hour Day-Ahead Operational MPC Baseline
+    print(f"\nSolving 24-Hour Day-Ahead MPC Baseline (N_p = {horizon} steps, Date: {start_date})...")
     dispatch_mpc_df, mpc_summary = solve_mpc_optimization(
         mode=mode,
         pv_forecast=pv_f,
@@ -520,7 +588,7 @@ def run_rt_pipeline(
         dt=0.25,
         soc_init=soc_init
     )
-    
+
     # 6. Execute Real-Time Secondary Control Simulation
     rt_df, rt_summary = run_rt_compensation(
         mode=mode,
@@ -535,27 +603,28 @@ def run_rt_pipeline(
         dt=0.25,
         soc_init=soc_init,
         epsilon_tol=epsilon_tol,
-        ramp_limit_fraction=ramp_limit_fraction
+        ramp_limit_fraction=ramp_limit_fraction,
+        start_date=start_date
     )
-    
+
     # 7. Persistence & Visualizations
     results_json_path = RESULTS_RT_DIR / f"rt_metrics_{mode}.json"
     results_csv_path = RESULTS_RT_DIR / f"rt_timeseries_{mode}.csv"
     plot_path = RESULTS_RT_DIR / f"rt_schedule_{mode}.png"
-    
+
     # Export CSV
     rt_df.to_csv(results_csv_path, index=False)
     print(f"Saved RT timeseries data to {results_csv_path}")
-    
+
     # Export JSON
     with open(results_json_path, "w", encoding="utf-8") as f:
         json.dump(rt_summary, f, indent=2)
     print(f"Saved RT metrics summary to {results_json_path}")
-    
+
     # Generate 5-Panel Plot
     plot_rt_results(mode, time_index, rt_df, sizing, rt_summary, plot_path)
-    
-    print(f"\n--- 2-DAY RT SIMULATION COMPLETE [{mode.upper()}] ---")
+
+    print(f"\n--- 24-HOUR RT SIMULATION COMPLETE [{mode.upper()} | {start_date}] ---")
     sch = rt_summary["scheduled_mpc"]
     act = rt_summary["real_time_actual"]
     diff = rt_summary["comparison_delta"]
@@ -565,11 +634,12 @@ def run_rt_pipeline(
     print(f"  DC Bus Residual : Max Mismatch = {rt_summary['dc_bus_balance']['max_residual_mismatch_kw']:.6f} kW")
     print(f"  Intervals       : {rt_summary['mismatch_categorization']['deficit_intervals']} Deficit / {rt_summary['mismatch_categorization']['surplus_intervals']} Surplus / {rt_summary['mismatch_categorization']['deadband_intervals']} Deadband")
     print(f"========================================================\n")
-    
+
     return rt_summary
 
+
 def main():
-    parser = argparse.ArgumentParser(description="2-Day Real-Time Secondary Microgrid Controller")
+    parser = argparse.ArgumentParser(description="24-Hour Real-Time Secondary Microgrid Controller")
     parser.add_argument(
         "--mode",
         choices=["supermarket", "ev", "caltech_ev", "all"],
@@ -585,8 +655,8 @@ def main():
     parser.add_argument(
         "--horizon",
         type=int,
-        default=192,
-        help="Prediction horizon in steps (default: 192 = 48h = 2 days)"
+        default=96,
+        help="Prediction horizon in steps (default: 96 = 24h = 1 day ahead)"
     )
     parser.add_argument(
         "--soc-init",
@@ -607,7 +677,7 @@ def main():
         help="Ramp limit fraction of P_B_max per interval (default: 0.50)"
     )
     args = parser.parse_args()
-    
+
     if args.mode == "all":
         modes = ["supermarket", "ev", "caltech_ev"]
         for m in modes:
@@ -628,6 +698,7 @@ def main():
             epsilon_tol=args.epsilon_tol,
             ramp_limit_fraction=args.ramp_limit
         )
+
 
 if __name__ == "__main__":
     main()

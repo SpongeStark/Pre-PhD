@@ -550,10 +550,11 @@ function stopLogPolling(scriptKey) {
 // Trigger script execution
 async function runScript(scriptKey) {
     try {
+        const selectedDate = (typeof getSelectedSimulationDate === "function") ? getSelectedSimulationDate() : "2024-10-24";
         const res = await fetch(`${API_BASE}/api/run`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ script: scriptKey })
+            body: JSON.stringify({ script: scriptKey, date: selectedDate })
         });
         
         if (!res.ok) {
@@ -1108,18 +1109,60 @@ function refreshRTPlots() {
 // OPENDSS-G TIME-MODE DSTCP CONTROLLER UI FUNCTIONS (MODE A & MODE B)
 // ============================================================================
 
+const PRESET_DATE_DESCRIPTIONS = {
+    "2024-10-24": "🌟 <strong>2024-10-24 (Thu, Test Set)</strong> — Sunny Showcase Day: <code>103.2 kW</code> PV Peak (378 kWh) | <code>97.6 kW</code> Supermarket | <code>38.4 kW</code> Lidl EV",
+    "2024-10-05": "☀️ <strong>2024-10-05 (Sat, Test Set)</strong> — Highest PV Energy in Test Set: <code>108.0 kW</code> PV Peak (443.2 kWh) | <code>98.4 kW</code> Supermarket | <code>18.6 kW</code> Lidl EV",
+    "2024-10-01": "📅 <strong>2024-10-01 (Tue, Test Set)</strong> — Official Test Split Start: <code>74.4 kW</code> PV Peak (221.3 kWh) | <code>98.8 kW</code> Supermarket | <code>7.2 kW</code> Lidl EV",
+    "2024-07-30": "🔥 <strong>2024-07-30 (Tue, Summer Val)</strong> — Absolute Max Registered PV: <code>132.0 kW</code> PV Peak (601.5 kWh) | <code>91.6 kW</code> Supermarket | <code>11.4 kW</code> Lidl EV",
+    "2024-08-22": "⚡ <strong>2024-08-22 (Thu, Summer Val)</strong> — High Summer PV + High EV: <code>129.2 kW</code> PV Peak (570.9 kWh) | <code>84.8 kW</code> Supermarket | <code>31.2 kW</code> Lidl EV",
+    "2022-11-01": "🎓 <strong>2022-11-01 (Tue, Caltech 2022 Test)</strong> — Caltech Test Split Start: <code>56.7 kW</code> PV Peak | <code>62.6 kW</code> Caltech EV Fleet",
+    "2022-11-11": "🚗 <strong>2022-11-11 (Fri, Caltech 2022 Test)</strong> — Caltech High EV Fleet Day: <code>88.4 kW</code> PV Peak | <code>71.1 kW</code> Caltech EV Fleet"
+};
+
+function getSelectedSimulationDate() {
+    const inp = document.getElementById("mpc-date-input") || document.getElementById("rt-date-input") || document.getElementById("dss-date-input");
+    return (inp && inp.value) ? inp.value : "2024-10-24";
+}
+
+function syncAllDateControls(dateStr) {
+    if (!dateStr) return;
+    document.querySelectorAll(".sim-date-input").forEach(inp => {
+        inp.value = dateStr;
+    });
+    const isPreset = Object.prototype.hasOwnProperty.call(PRESET_DATE_DESCRIPTIONS, dateStr);
+    document.querySelectorAll(".sim-date-preset").forEach(sel => {
+        sel.value = isPreset ? dateStr : "custom";
+    });
+    const desc = PRESET_DATE_DESCRIPTIONS[dateStr] || `✏️ <strong>Custom 24h Evaluation Date:</strong> <code>${dateStr}</code> (96 steps &times; 15 min, 672-step historical lag window)`;
+    document.querySelectorAll(".sim-date-info-banner").forEach(b => {
+        b.innerHTML = `${desc} &mdash; <strong>Splits:</strong> Train <code>&lt; 2024-01-01</code> | Val <code>2024-01..09</code> | Test <code>&ge; 2024-10-01</code>.`;
+    });
+}
+
+function onPresetDateChange(presetVal) {
+    if (presetVal && presetVal !== "custom") {
+        syncAllDateControls(presetVal);
+    }
+}
+
+function onCustomDateInputChange(dateVal) {
+    if (dateVal) {
+        syncAllDateControls(dateVal);
+    }
+}
+
 function updateOpenDSSModeDescription() {
     const sel = document.getElementById("opendss-source-select");
     const banner = document.getElementById("opendss-mode-banner");
     if (!sel || !banner) return;
 
     const val = sel.value;
-    if (val === "loadshape") {
-        banner.innerHTML = `<strong>Mode A (Local BMS + LoadShape.dss):</strong> OpenDSS-G uses its internal 96-step <code>LoadShape.dss</code> profiles (<code>minterval=15</code>). At each step <i>k</i>, the controller charges the battery from surplus PV (up to 90% SoC), discharges on deficit (down to 20% SoC), and throttles <code>%Pmpp = (P_PV_dispatched / 210.0) &times; 100</code> so <code>P_grid &ge; 0 kW</code>.`;
-    } else if (val === "rt") {
-        banner.innerHTML = `<strong>Mode B — Real-Time Controller Schedule (<code>rt_timeseries</code>):</strong> Reads the 96-step closed-loop schedule produced by your Forecaster + MPC + Real-Time Secondary Controller (<code>P_load_actual</code>, <code>P_PV_actual</code>, <code>P_ch_rt</code>, <code>P_dis_rt</code>, <code>P_curt_rt</code>) and injects each 15-min step into OpenDSS-G via DSTCP while enforcing <code>%Pmpp</code> zero grid re-injection.`;
+    if (val === "rt") {
+        banner.innerHTML = `<strong>Mode B — Closed-Loop Digital Twin (<code>rt</code>):</strong> Dynamically writes the selected date's actual 96-step PV &amp; Load profiles into OpenDSS-G's <code>LoadShape.dss</code>. At each 15-min step <i>k</i>, Python recovers the physical PV &amp; Load from OpenDSS-G, computes the 4-layer Real-Time compensation against the 24h Day-Ahead MPC schedule, and sends <strong>only</strong> the Battery (<code>%Charge/%Discharge</code>) and PV Curtailment (<code>%Pmpp</code>) commands back to OpenDSS-G.`;
     } else if (val === "mpc") {
-        banner.innerHTML = `<strong>Mode B — Day-Ahead MPC Schedule (<code>mpc_timeseries</code>):</strong> Reads the 96-step day-ahead schedule produced by your Forecaster + IPOPT MPC Optimizer (<code>P_load_forecast</code>, <code>P_PV_forecast</code>, <code>P_ch_sch</code>, <code>P_dis_sch</code>, <code>P_curt_sch</code>) and executes the 96 steps in OpenDSS-G over DSTCP.`;
+        banner.innerHTML = `<strong>Mode B — Day-Ahead MPC Schedule (<code>mpc</code>):</strong> Writes the selected date's 96-step profiles into OpenDSS-G's <code>LoadShape.dss</code> and dispatches the Day-Ahead IPOPT MPC battery schedule (<code>P_ch_sch</code>, <code>P_dis_sch</code>) with SoC limits [20%, 90%] and active <code>%Pmpp</code> zero-reinjection curtailment.`;
+    } else if (val === "loadshape") {
+        banner.innerHTML = `<strong>Mode A — Autonomous Local Greedy BMS (<code>loadshape</code>):</strong> Uses the selected date's 96-step <code>LoadShape.dss</code> in OpenDSS-G with a local greedy BMS rule (no MPC lookahead or tariff optimization): charges immediately from PV surplus up to 90% SoC, discharges on deficit down to 20% SoC, and throttles <code>%Pmpp</code> so <code>P_grid &ge; 0 kW</code>.`;
     }
 }
 
@@ -1128,10 +1171,12 @@ async function runOpenDSS(scriptKey) {
         const sourceSel = document.getElementById("opendss-source-select");
         const noCompileChk = document.getElementById("opendss-no-compile");
         const showPlotsChk = document.getElementById("opendss-show-plots");
+        const selectedDate = getSelectedSimulationDate();
 
         const payload = {
             script: scriptKey,
-            source: sourceSel ? sourceSel.value : "loadshape",
+            source: sourceSel ? sourceSel.value : "rt",
+            date: selectedDate,
             no_compile: noCompileChk ? noCompileChk.checked : false,
             show_plots: showPlotsChk ? showPlotsChk.checked : false
         };
@@ -1218,7 +1263,7 @@ async function loadOpenDSSMetrics() {
             const cardEl = document.getElementById(m.cardId);
 
             if (loadEl) loadEl.textContent = `${c.installed_load_kw.toFixed(1)} kW / ${c.peak_load_kw.toFixed(2)} kW`;
-            if (srcEl) srcEl.textContent = formatOpenDSSSourceLabel(c.source);
+            if (srcEl) srcEl.textContent = `${formatOpenDSSSourceLabel(c.source)}${c.date ? ' [' + c.date + ']' : ''}`;
             if (pvEl) pvEl.textContent = `${c.peak_pv_avail_clipped_kw.toFixed(2)} → ${c.peak_pv_dispatched_kw.toFixed(2)} kW`;
             if (curtEl) curtEl.textContent = `${c.total_pv_curtailed_kwh.toFixed(2)} kWh`;
             if (gridEl) gridEl.textContent = `${c.total_grid_imported_kwh.toFixed(2)} kWh`;

@@ -49,6 +49,39 @@ DEFAULT_SIZING = {
     "caltech_ev": {"E_B_max": 31.36, "P_B_max": 14.07, "name": "Caltech Campus EV Fleet (c_ev)"}
 }
 
+# Recommended 24-hour test dates per asset timeline
+DEFAULT_START_DATES = {
+    "supermarket": "2024-10-24",
+    "ev": "2024-10-24",
+    "caltech_ev": "2022-11-01",
+}
+
+
+def resolve_valid_start_date(mode: str, start_date: str = None) -> str:
+    """
+    Normalizes start_date so 2024 modes ('supermarket', 'ev') use a valid 2024 date
+    and 2022 mode ('caltech_ev') uses a valid Nov-Dec 2022 date.
+    """
+    if not start_date:
+        return DEFAULT_START_DATES.get(mode, "2024-10-24")
+    try:
+        ts = pd.to_datetime(start_date)
+    except Exception:
+        return DEFAULT_START_DATES.get(mode, "2024-10-24")
+
+    if mode == "caltech_ev":
+        if ts.year != 2022 or ts < pd.Timestamp("2022-09-15"):
+            fallback = DEFAULT_START_DATES["caltech_ev"]
+            print(f"  [Date Resolver] Note: '{start_date}' is outside Caltech 2022 dataset; using '{fallback}' for caltech_ev.")
+            return fallback
+    else:
+        if ts.year != 2024:
+            fallback = DEFAULT_START_DATES.get(mode, "2024-10-24")
+            print(f"  [Date Resolver] Note: '{start_date}' is outside 2024 dataset; using '{fallback}' for {mode}.")
+            return fallback
+    return ts.strftime("%Y-%m-%d")
+
+
 def load_battery_sizing(mode: str):
     """Loads established hardware sizing parameters from battery_sizing_results.json."""
     json_path = SRC_DIR / "battery_sizing_results.json"
@@ -62,6 +95,7 @@ def load_battery_sizing(mode: str):
             print(f"Warning: Could not read {json_path}: {e}")
     return DEFAULT_SIZING.get(mode, DEFAULT_SIZING["supermarket"])
 
+
 def fetch_or_load_tariffs(year: int, start_date: str, steps: int = 96):
     """Loads historic electricity wholesale prices + TURPE & taxes, interpolated to 15-min."""
     cache_path = DATA_DIR / f"historic_wholesale_prices_{year}.parquet"
@@ -71,17 +105,17 @@ def fetch_or_load_tariffs(year: int, start_date: str, steps: int = 96):
             client.fetch_historic_prices_for_year(year)
         except Exception as e:
             print(f"Warning: Failed to fetch {year} wholesale prices ({e}). Using synthetic ToU.")
-            
+
     if cache_path.exists():
         df_p = pd.read_parquet(cache_path)
         df_p["Date"] = pd.to_datetime(df_p["start_time"]).dt.tz_localize(None)
         df_p = df_p.sort_values("Date").drop_duplicates("Date")
-        
+
         # Build 15-min time index for the requested evaluation window
         start_ts = pd.to_datetime(start_date)
         dt_idx = pd.date_range(start_ts, periods=steps, freq="15min")
         df_eval = pd.DataFrame({"Date": dt_idx})
-        
+
         df_merged = pd.merge_asof(
             df_eval,
             df_p[["Date", "total_price_eur_kwh"]],
@@ -98,60 +132,71 @@ def fetch_or_load_tariffs(year: int, start_date: str, steps: int = 96):
         tariffs = np.where((hours >= 17) & (hours <= 21), 0.22, 0.12)
         return tariffs, dt_idx
 
+
 def get_forecast_and_actual_trajectories(mode: str, start_date: str, horizon: int = 96):
     """
-    Retrieves the 24-hour day-ahead forecast and ground truth actuals for both PV and Load.
-    Uses trained LightGBM or XGBoost models as determined by the forecaster engine.
+    Retrieves the 24-hour (96-step) day-ahead forecast and ground truth actuals for both PV and Load
+    starting at any selected `start_date`.
+    Dynamically extracts the 672-step (7-day) historical lag window immediately preceding `start_date`.
     """
-    print(f"\n--- Generating Day-Ahead Forecasts for Mode: {mode.upper()} ({start_date}) ---")
-    
+    start_date = resolve_valid_start_date(mode, start_date)
+    start_ts = pd.to_datetime(start_date)
+    print(f"\n--- Generating Day-Ahead Forecasts for Mode: {mode.upper()} (Date: {start_date}, Horizon: {horizon} steps) ---")
+
     # Target identifiers
     load_target_key = "con" if mode == "supermarket" else ("ev" if mode == "ev" else "caltech")
-    
+
     # 1. Load PV Forecast and Actual
+    df_pv, train_pv_default, _, _, target_col_pv, exog_cols_pv = load_and_preprocess("pv")
     if mode == "caltech_ev":
-        # For Caltech 2022 timeline, train PV up to Oct 2022 and predict Nov 1, 2022
-        df_pv, _, _, _, target_col_pv, exog_cols_pv = load_and_preprocess("pv")
         train_pv = df_pv[df_pv.index < "2022-10-01"]
-        val_pv = df_pv[(df_pv.index >= "2022-10-01") & (df_pv.index < start_date)]
-        test_pv = df_pv[df_pv.index >= start_date]
-        
-        # Use Tuned LightGBM for PV (achieved R2=0.7232 vs XGB 0.7071)
-        forecaster_pv = ForecasterRecursive(estimator=get_models("pv")["LGBM"], lags=LAGS)
-        forecaster_pv.fit(y=train_pv[target_col_pv], exog=train_pv[exog_cols_pv])
-        lw_pv = val_pv[target_col_pv].iloc[-max(LAGS):]
-        pv_forecast = forecaster_pv.predict(steps=horizon, last_window=lw_pv, exog=test_pv[exog_cols_pv].iloc[:horizon]).values
-        pv_forecast = np.clip(pv_forecast, 0.0, None)
-        pv_actual = test_pv[target_col_pv].iloc[:horizon].values
-        time_index = test_pv.index[:horizon]
     else:
-        # Standard 2024 test split starting at start_date (2024-10-01)
-        df_pv, train_pv, val_pv, test_pv, target_col_pv, exog_cols_pv = load_and_preprocess("pv")
-        forecaster_pv = ForecasterRecursive(estimator=get_models("pv")["LGBM"], lags=LAGS)
-        forecaster_pv.fit(y=train_pv[target_col_pv], exog=train_pv[exog_cols_pv])
-        lw_pv = val_pv[target_col_pv].iloc[-max(LAGS):]
-        pv_forecast = forecaster_pv.predict(steps=horizon, last_window=lw_pv, exog=test_pv[exog_cols_pv].iloc[:horizon]).values
-        pv_forecast = np.clip(pv_forecast, 0.0, None)
-        pv_actual = test_pv[target_col_pv].iloc[:horizon].values
-        time_index = test_pv.index[:horizon]
-        
+        train_pv = train_pv_default  # < 2024-01-01
+
+    hist_pv = df_pv[df_pv.index < start_ts]
+    eval_pv = df_pv[df_pv.index >= start_ts]
+    if len(eval_pv) < horizon:
+        raise ValueError(f"Insufficient PV data after {start_date}: found {len(eval_pv)} steps, need {horizon}.")
+
+    forecaster_pv = ForecasterRecursive(estimator=get_models("pv")["LGBM"], lags=LAGS)
+    forecaster_pv.fit(y=train_pv[target_col_pv], exog=train_pv[exog_cols_pv])
+    lw_pv = hist_pv[target_col_pv].iloc[-max(LAGS):]
+    pv_forecast = forecaster_pv.predict(
+        steps=horizon,
+        last_window=lw_pv,
+        exog=eval_pv[exog_cols_pv].iloc[:horizon]
+    ).values
+    pv_forecast = np.clip(pv_forecast, 0.0, None)
+    pv_actual = eval_pv[target_col_pv].iloc[:horizon].values
+    time_index = eval_pv.index[:horizon]
+
     # 2. Load Asset Demand Forecast and Actual
-    df_load, train_load, val_load, test_load, target_col_load, exog_cols_load = load_and_preprocess(load_target_key)
+    df_load, train_load, _, _, target_col_load, exog_cols_load = load_and_preprocess(load_target_key)
+    hist_load = df_load[df_load.index < start_ts]
+    eval_load = df_load[df_load.index >= start_ts]
+    if len(eval_load) < horizon:
+        raise ValueError(f"Insufficient Load data after {start_date}: found {len(eval_load)} steps, need {horizon}.")
+
     best_regressor = "LGBM" if load_target_key in ["con", "caltech"] else "XGB"
     forecaster_load = ForecasterRecursive(estimator=get_models(load_target_key)[best_regressor], lags=LAGS)
     forecaster_load.fit(y=train_load[target_col_load], exog=train_load[exog_cols_load])
-    lw_load = val_load[target_col_load].iloc[-max(LAGS):]
-    load_forecast = forecaster_load.predict(steps=horizon, last_window=lw_load, exog=test_load[exog_cols_load].iloc[:horizon]).values
+    lw_load = hist_load[target_col_load].iloc[-max(LAGS):]
+    load_forecast = forecaster_load.predict(
+        steps=horizon,
+        last_window=lw_load,
+        exog=eval_load[exog_cols_load].iloc[:horizon]
+    ).values
     load_forecast = np.clip(load_forecast, 0.0, None)
     if load_target_key == "ev":
         load_forecast = np.where(load_forecast < 0.25, 0.08, load_forecast)
-    load_actual = test_load[target_col_load].iloc[:horizon].values
-    
-    print(f"Successfully generated {horizon}-step trajectories:")
-    print(f"  PV Generation  : Forecast Mean={pv_forecast.mean():.2f} kW | Actual Mean={pv_actual.mean():.2f} kW")
-    print(f"  Asset Load     : Forecast Mean={load_forecast.mean():.2f} kW | Actual Mean={load_actual.mean():.2f} kW")
-    
+    load_actual = eval_load[target_col_load].iloc[:horizon].values
+
+    print(f"Successfully generated {horizon}-step trajectories for {start_date}:")
+    print(f"  PV Generation  : Forecast Peak={pv_forecast.max():.2f} kW (Mean={pv_forecast.mean():.2f} kW) | Actual Peak={pv_actual.max():.2f} kW (Mean={pv_actual.mean():.2f} kW)")
+    print(f"  Asset Load     : Forecast Peak={load_forecast.max():.2f} kW (Mean={load_forecast.mean():.2f} kW) | Actual Peak={load_actual.max():.2f} kW (Mean={load_actual.mean():.2f} kW)")
+
     return time_index, pv_forecast, pv_actual, load_forecast, load_actual
+
 
 def solve_mpc_optimization(
     mode: str,
@@ -169,7 +214,7 @@ def solve_mpc_optimization(
     N_p = len(pv_forecast)
     E_B_max = float(sizing_params["E_B_max"])
     P_B_max = float(sizing_params["P_B_max"])
-    
+
     # System Technical Efficiencies
     eta_pvinverter = 0.99
     eta_mppt = 0.99
@@ -177,30 +222,30 @@ def solve_mpc_optimization(
     eta_dcac = 0.99
     eta_c = 0.95
     eta_d = 0.95
-    
+
     # Operating SoC and Inverter Derating Parameters
     SoC_min = 0.20
     SoC_max = 0.90
     D_ch = 0.90
     D_dis = 0.20
-    
+
     # Economic & Degradation Parameters
     C_0 = 500.0 * E_B_max + 100.0 * P_B_max  # Battery replacement capital cost [EUR]
     CF_max = 0.20                            # Max allowable capacity fade (20%)
     alpha = 0.05
     beta = 0.01
-    
+
     # Build Pyomo Non-Linear Model
     model = pyo.ConcreteModel(name=f"MPC_{mode}")
     model.K = pyo.RangeSet(0, N_p - 1)
-    
+
     # Decision Variables
     model.P_grid = pyo.Var(model.K, domain=pyo.NonNegativeReals, initialize=5.0)
     model.P_ch = pyo.Var(model.K, domain=pyo.NonNegativeReals, bounds=(0, P_B_max), initialize=0.0)
     model.P_dis = pyo.Var(model.K, domain=pyo.NonNegativeReals, bounds=(0, P_B_max), initialize=0.0)
     model.E_B = pyo.Var(model.K, domain=pyo.NonNegativeReals, bounds=(SoC_min * E_B_max, SoC_max * E_B_max), initialize=soc_init * E_B_max)
     model.P_curt = pyo.Var(model.K, domain=pyo.NonNegativeReals, initialize=0.0)
-    
+
     # Constraints
     # 1. DC Bus Power Balance:
     # (P_PV^f * eta_mppt / eta_pvinverter) + P_grid * eta_acdc + P_dis = (P_load^f / eta_dcac) + P_ch + P_curt
@@ -209,7 +254,7 @@ def solve_mpc_optimization(
         load_dem = load_forecast[k] / eta_dcac
         return pv_gen + m.P_grid[k] * eta_acdc + m.P_dis[k] == load_dem + m.P_ch[k] + m.P_curt[k]
     model.PowerBalance = pyo.Constraint(model.K, rule=power_balance_rule)
-    
+
     # 2. Battery Energy Dynamics:
     def energy_dynamics_rule(m, k):
         delta_e = (m.P_ch[k] * eta_c - m.P_dis[k] / eta_d) * dt
@@ -218,32 +263,32 @@ def solve_mpc_optimization(
         else:
             return m.E_B[k] == m.E_B[k-1] + delta_e
     model.EnergyDynamics = pyo.Constraint(model.K, rule=energy_dynamics_rule)
-    
+
     # 3. Dynamic Inverter Power Derating as function of SoC:
     # P_ch <= P_B_max / (1 - D_ch) * (1 - SoC)
     def derating_charge_rule(m, k):
         soc = m.E_B[k] / E_B_max
         return m.P_ch[k] <= (P_B_max / (1.0 - D_ch)) * (1.0 - soc)
     model.DeratingCharge = pyo.Constraint(model.K, rule=derating_charge_rule)
-    
+
     # P_dis <= P_B_max / D_dis * SoC
     def derating_discharge_rule(m, k):
         soc = m.E_B[k] / E_B_max
         return m.P_dis[k] <= (P_B_max / D_dis) * soc
     model.DeratingDischarge = pyo.Constraint(model.K, rule=derating_discharge_rule)
-    
+
     # Objective Function: Min Sum [ Grid_Cost + C_SoC + C_DoD + 1e-4 * P_curt ]
     def objective_rule(m):
         cost_terms = []
         for k in m.K:
             # 1. Grid Import Cost
             grid_cost = m.P_grid[k] * dt * tariffs[k]
-            
+
             # 2. Calendar Aging Cost:
             # C_SoC = C_0 * (alpha * SoC - beta) / (CF_max * 15 * 8760) * dt
             soc = m.E_B[k] / E_B_max
             c_soc = C_0 * (alpha * soc - beta) / (CF_max * 15.0 * 8760.0) * dt
-            
+
             # 3. Cyclic Depth-of-Discharge Wear Cost:
             # delta_L = P_dis * dt / E_B_max
             # N_tot = (1.06*delta_L^4 - 2.80*delta_L^3 + 2.66*delta_L^2 - 1.07*delta_L + 0.17)*1e5
@@ -251,27 +296,27 @@ def solve_mpc_optimization(
             delta_L = (m.P_dis[k] * dt) / E_B_max
             n_tot = (1.06 * (delta_L**4) - 2.80 * (delta_L**3) + 2.66 * (delta_L**2) - 1.07 * delta_L + 0.17) * 1e5
             c_dod = C_0 * (delta_L / n_tot)
-            
+
             # PV Curtailment soft penalty
             curt_cost = 1e-4 * m.P_curt[k]
-            
+
             cost_terms.append(grid_cost + c_soc + c_dod + curt_cost)
         return sum(cost_terms)
     model.Objective = pyo.Objective(rule=objective_rule, sense=pyo.minimize)
-    
+
     # Solve with IPOPT
     ipopt_exe = shutil.which('ipopt') or r'C:\Users\alesk\miniconda3\Library\bin\ipopt.EXE'
     solver = pyo.SolverFactory('ipopt', executable=ipopt_exe)
     solver.options['max_iter'] = 3000
     solver.options['tol'] = 1e-6
     solver.options['print_level'] = 0  # Clean output
-    
+
     print(f"\nSolving Pyomo NLP ({N_p} steps) with IPOPT solver...")
     t0 = time.time()
     results = solver.solve(model, tee=False)
     solve_time = time.time() - t0
     print(f"IPOPT Solve completed in {solve_time:.3f} s (Status: {results.solver.status}, Termination: {results.solver.termination_condition})")
-    
+
     # Extract scheduled trajectory
     p_grid_sch = np.array([pyo.value(model.P_grid[k]) for k in model.K])
     p_ch_sch = np.array([pyo.value(model.P_ch[k]) for k in model.K])
@@ -279,19 +324,19 @@ def solve_mpc_optimization(
     e_b_sch = np.array([pyo.value(model.E_B[k]) for k in model.K])
     soc_sch = e_b_sch / E_B_max
     p_curt_sch = np.array([pyo.value(model.P_curt[k]) for k in model.K])
-    
+
     # Compute interval degradation costs
     c_soc_arr = np.array([C_0 * (alpha * soc_sch[k] - beta) / (CF_max * 15.0 * 8760.0) * dt for k in range(N_p)])
     delta_L_arr = (p_dis_sch * dt) / E_B_max
     n_tot_arr = (1.06 * (delta_L_arr**4) - 2.80 * (delta_L_arr**3) + 2.66 * (delta_L_arr**2) - 1.07 * delta_L_arr + 0.17) * 1e5
     c_dod_arr = np.array([C_0 * (delta_L_arr[k] / n_tot_arr[k]) for k in range(N_p)])
-    
+
     total_grid_cost = float(np.sum(p_grid_sch * dt * tariffs))
     total_soc_cost = float(np.sum(c_soc_arr))
     total_dod_cost = float(np.sum(c_dod_arr))
     total_deg_cost = total_soc_cost + total_dod_cost
     total_obj = total_grid_cost + total_deg_cost
-    
+
     dispatch_df = pd.DataFrame({
         "step": range(N_p),
         "P_PV_forecast_kW": pv_forecast,
@@ -307,7 +352,7 @@ def solve_mpc_optimization(
         "C_DoD_eur": c_dod_arr,
         "C_deg_total_eur": c_soc_arr + c_dod_arr
     })
-    
+
     summary = {
         "solve_time_sec": round(solve_time, 3),
         "total_grid_cost_eur": round(total_grid_cost, 2),
@@ -321,8 +366,9 @@ def solve_mpc_optimization(
         "curtailed_pv_kwh": round(float(np.sum(p_curt_sch * dt)), 2),
         "final_soc": round(float(soc_sch[-1]), 4)
     }
-    
+
     return dispatch_df, summary
+
 
 def analyze_forecast_mismatch(
     dispatch_df: pd.DataFrame,
@@ -337,21 +383,21 @@ def analyze_forecast_mismatch(
     """
     eta_mppt = 0.99
     eta_dcac = 0.99
-    
+
     pv_f = dispatch_df["P_PV_forecast_kW"].values
     load_f = dispatch_df["P_load_forecast_kW"].values
-    
+
     # Deviations (Actual - Forecast)
     delta_pv = pv_actual - pv_f
     delta_load = load_actual - load_f
-    
+
     # Net Microgrid Error on DC Bus
     p_error = (delta_pv * eta_mppt) - (delta_load / eta_dcac)
-    
+
     # Scenario Classification
     scenario_types = []
     case_details = []
-    
+
     # Real-time Compensated Simulation:
     # Tracks how a real-time secondary controller handles the error mismatch:
     p_ch_rt = []
@@ -359,21 +405,21 @@ def analyze_forecast_mismatch(
     p_grid_rt = []
     p_curt_rt = []
     soc_rt = []
-    
+
     E_B_max = sizing_params["E_B_max"]
     P_B_max = sizing_params["P_B_max"]
     SoC_min = 0.20
     SoC_max = 0.90
     eta_c = 0.95
     eta_d = 0.95
-    
+
     curr_e = 0.50 * E_B_max
-    
+
     for k in range(len(p_error)):
         dpv = delta_pv[k]
         dld = delta_load[k]
         err = p_error[k]
-        
+
         # Categorize
         if err < -1e-3:
             s_type = "Deficit"
@@ -394,15 +440,15 @@ def analyze_forecast_mismatch(
         else:
             s_type = "Balanced"
             c_det = "Exact Forecast Match"
-            
+
         scenario_types.append(s_type)
         case_details.append(c_det)
-        
+
         # Real-time power balance compensation logic
         sch_dis = dispatch_df["P_dis_sch_kW"].iloc[k]
         sch_ch = dispatch_df["P_ch_sch_kW"].iloc[k]
         sch_grid = dispatch_df["P_grid_sch_kW"].iloc[k]
-        
+
         if err < 0:  # Missing power on DC bus
             deficit = abs(err)
             curr_soc = curr_e / E_B_max
@@ -425,17 +471,17 @@ def analyze_forecast_mismatch(
             curt_actual = rem_surplus
             dis_actual = max(0.0, sch_dis)
             grid_actual = sch_grid
-            
+
         # Update RT battery state
         curr_e = curr_e + (ch_actual * eta_c - dis_actual / eta_d) * dt
         curr_e = max(SoC_min * E_B_max, min(SoC_max * E_B_max, curr_e))
-        
+
         p_ch_rt.append(ch_actual)
         p_dis_rt.append(dis_actual)
         p_grid_rt.append(grid_actual)
         p_curt_rt.append(curt_actual)
         soc_rt.append(curr_e / E_B_max)
-        
+
     analysis_df = dispatch_df.copy()
     analysis_df["P_PV_actual_kW"] = pv_actual
     analysis_df["P_load_actual_kW"] = load_actual
@@ -449,11 +495,11 @@ def analyze_forecast_mismatch(
     analysis_df["P_dis_rt_comp_kW"] = p_dis_rt
     analysis_df["P_curt_rt_comp_kW"] = p_curt_rt
     analysis_df["SoC_rt_comp"] = soc_rt
-    
+
     # Error Statistics
     counts = pd.Series(scenario_types).value_counts().to_dict()
     case_counts = pd.Series(case_details).value_counts().to_dict()
-    
+
     mismatch_stats = {
         "mean_p_error_kw": round(float(np.mean(p_error)), 2),
         "mae_p_error_kw": round(float(np.mean(np.abs(p_error))), 2),
@@ -464,8 +510,9 @@ def analyze_forecast_mismatch(
         "balanced_intervals": int(counts.get("Balanced", 0)),
         "case_distribution": case_counts
     }
-    
+
     return analysis_df, mismatch_stats
+
 
 def plot_mpc_results(
     mode: str,
@@ -474,7 +521,8 @@ def plot_mpc_results(
     sizing_params: dict,
     summary: dict,
     mismatch_stats: dict,
-    save_path: Path
+    save_path: Path,
+    start_date: str = ""
 ):
     """
     Generates a 4-panel publication-quality dashboard visualization:
@@ -485,7 +533,7 @@ def plot_mpc_results(
     """
     hours = np.arange(len(time_index)) / 4.0  # 0 to 24 hours
     fig, axes = plt.subplots(4, 1, figsize=(15, 14), sharex=True, gridspec_kw={'height_ratios': [2.2, 1.4, 1.3, 1.6]})
-    
+
     # ---------------- PANEL 1: POWER BALANCE ----------------
     ax1 = axes[0]
     ax1.plot(hours, analysis_df["P_load_forecast_kW"], label="Forecast Load", color="#ef4444", linewidth=2.0, linestyle="-")
@@ -495,10 +543,11 @@ def plot_mpc_results(
     ax1.plot(hours, analysis_df["P_dis_sch_kW"], label="Scheduled Battery Discharge", color="#8b5cf6", linewidth=1.8, linestyle="-.")
     if analysis_df["P_curt_sch_kW"].max() > 0.01:
         ax1.plot(hours, analysis_df["P_curt_sch_kW"], label="PV Curtailment", color="#6b7280", linewidth=1.5, linestyle="--")
-        
+
+    date_lbl = f" [{start_date}]" if start_date else ""
     ax1.set_ylabel("Power (kW)", fontsize=10, fontweight="bold")
     ax1.set_title(
-        f"Model Predictive Control (24h Day-Ahead Schedule): {sizing_params['name']}\n"
+        f"Model Predictive Control (24h Day-Ahead Schedule{date_lbl}): {sizing_params['name']}\n"
         f"Optimal Sizing: {sizing_params['E_B_max']} kWh / {sizing_params['P_B_max']} kW | "
         f"Total Grid Cost: EUR {summary['total_grid_cost_eur']:.2f} | "
         f"Battery Degradation: EUR {summary['total_battery_degradation_cost_eur']:.4f} | "
@@ -507,7 +556,7 @@ def plot_mpc_results(
     )
     ax1.grid(True, linestyle="--", alpha=0.5)
     ax1.legend(loc="upper right", ncol=3, fontsize=9, framealpha=0.9)
-    
+
     # ---------------- PANEL 2: BATTERY SOC & DERATING ----------------
     ax2 = axes[1]
     ax2.plot(hours, analysis_df["SoC_sch"] * 100.0, label="Scheduled SoC (%)", color="#0284c7", linewidth=2.2)
@@ -519,7 +568,7 @@ def plot_mpc_results(
     ax2.set_ylim(10, 100)
     ax2.grid(True, linestyle="--", alpha=0.5)
     ax2.legend(loc="upper right", ncol=4, fontsize=9, framealpha=0.9)
-    
+
     # ---------------- PANEL 3: DYNAMIC DEGRADATION PENALTIES ----------------
     ax3 = axes[2]
     ax3.plot(hours, analysis_df["C_SoC_eur"] * 1000.0, label="Calendar Aging Cost C_SoC (mEUR/15m)", color="#d97706", linewidth=1.8)
@@ -527,18 +576,18 @@ def plot_mpc_results(
     ax3.set_ylabel("Wear Cost (mEUR/step)", fontsize=10, fontweight="bold")
     ax3.grid(True, linestyle="--", alpha=0.5)
     ax3.legend(loc="upper right", fontsize=9, framealpha=0.9)
-    
+
     # ---------------- PANEL 4: FORECAST MISMATCH & CASES ----------------
     ax4 = axes[3]
     p_err = analysis_df["P_Error_kW"].values
     surplus_bars = np.where(p_err > 0, p_err, 0)
     deficit_bars = np.where(p_err < 0, p_err, 0)
-    
+
     ax4.bar(hours, surplus_bars, width=0.22, color="#10b981", alpha=0.8, label=f"Surplus Error (PV > Load Mismatch: {mismatch_stats['surplus_intervals']} steps)")
     ax4.bar(hours, deficit_bars, width=0.22, color="#f43f5e", alpha=0.8, label=f"Deficit Error (PV < Load Mismatch: {mismatch_stats['deficit_intervals']} steps)")
     ax4.axhline(0, color="#475569", linewidth=1.0)
     ax4.set_ylabel("P_Error (kW)", fontsize=10, fontweight="bold")
-    ax4.set_xlabel("Hour of Operation (0 to 24h)", fontsize=11, fontweight="bold")
+    ax4.set_xlabel(f"Hour of Operation (0 to 24h on {start_date})", fontsize=11, fontweight="bold")
     ax4.set_title(
         f"Real-Time Forecast Error Realization: Net DC Mismatch $P_{{Error}}(k) = (\\Delta P_{{PV}} \\cdot \\eta_{{mppt}}) - (\\Delta P_{{load}} / \\eta_{{dc/ac}})$\n"
         f"Mean Mismatch: {mismatch_stats['mean_p_error_kw']:+.2f} kW | "
@@ -549,18 +598,19 @@ def plot_mpc_results(
     )
     ax4.grid(True, linestyle="--", alpha=0.5)
     ax4.legend(loc="upper right", ncol=2, fontsize=9, framealpha=0.9)
-    
+
     plt.tight_layout()
     fig.savefig(save_path, dpi=300)
     plt.close(fig)
     print(f"Saved publication-quality MPC chart to {save_path}")
+
 
 def run_mpc_pipeline(mode: str, start_date: str = None, horizon: int = 96, soc_init: float = 0.50):
     """Complete execution pipeline for an individual microgrid MPC asset."""
     print(f"\n=================================================================")
     print(f"  RUNNING MODEL PREDICTIVE CONTROL OPTIMIZER: {mode.upper()}")
     print(f"=================================================================")
-    
+
     # 1. Hardware Sizing Parameters
     sizing = load_battery_sizing(mode)
     print(f"Loaded Hardware Sizing Configuration:")
@@ -568,18 +618,17 @@ def run_mpc_pipeline(mode: str, start_date: str = None, horizon: int = 96, soc_i
     print(f"  Battery Capacity  : {sizing['E_B_max']} kWh")
     print(f"  Inverter Power    : {sizing['P_B_max']} kW")
     print(f"  Annual Cost Basis : EUR {sizing.get('annualized_cost_eur', 0):,.2f}")
-    
+
     # 2. Horizon Date Determination
-    if start_date is None:
-        start_date = "2022-11-01" if mode == "caltech_ev" else "2024-10-01"
+    start_date = resolve_valid_start_date(mode, start_date)
     year = pd.to_datetime(start_date).year
-    
+
     # 3. Forecast and Ground Truth Trajectories
     time_index, pv_f, pv_act, load_f, load_act = get_forecast_and_actual_trajectories(mode, start_date, horizon)
-    
+
     # 4. Electricity Tariffs
     tariffs, dt_idx = fetch_or_load_tariffs(year, start_date, steps=horizon)
-    
+
     # 5. Non-Linear MPC Optimization
     dispatch_df, summary = solve_mpc_optimization(
         mode=mode,
@@ -590,7 +639,7 @@ def run_mpc_pipeline(mode: str, start_date: str = None, horizon: int = 96, soc_i
         dt=0.25,
         soc_init=soc_init
     )
-    
+
     # 6. Real-Time Mismatch and Case Analysis
     analysis_df, mismatch_stats = analyze_forecast_mismatch(
         dispatch_df=dispatch_df,
@@ -599,16 +648,16 @@ def run_mpc_pipeline(mode: str, start_date: str = None, horizon: int = 96, soc_i
         sizing_params=sizing,
         dt=0.25
     )
-    
+
     # 7. Persistence & Visualizations
     results_json_path = RESULTS_DIR / f"mpc_metrics_{mode}.json"
     results_csv_path = RESULTS_DIR / f"mpc_timeseries_{mode}.csv"
     plot_path = RESULTS_DIR / f"mpc_schedule_{mode}.png"
-    
+
     # Export full timeseries
     analysis_df["timestamp"] = time_index.strftime("%Y-%m-%d %H:%M:%S")
     analysis_df.to_csv(results_csv_path, index=False)
-    
+
     combined_metrics = {
         "mode": mode,
         "name": sizing["name"],
@@ -623,15 +672,15 @@ def run_mpc_pipeline(mode: str, start_date: str = None, horizon: int = 96, soc_i
             "plot_png": str(plot_path.name)
         }
     }
-    
+
     with open(results_json_path, "w", encoding="utf-8") as f:
         json.dump(combined_metrics, f, indent=2)
     print(f"Saved MPC summary metrics to {results_json_path}")
-    
+
     # Generate 4-panel dashboard plot
-    plot_mpc_results(mode, time_index, analysis_df, sizing, summary, mismatch_stats, plot_path)
-    
-    print(f"\n--- MPC OPTIMIZATION COMPLETE [{mode.upper()}] ---")
+    plot_mpc_results(mode, time_index, analysis_df, sizing, summary, mismatch_stats, plot_path, start_date=start_date)
+
+    print(f"\n--- MPC OPTIMIZATION COMPLETE [{mode.upper()} | {start_date}] ---")
     print(f"  Grid Imported Energy : {summary['grid_energy_imported_kwh']:.2f} kWh (Cost: EUR {summary['total_grid_cost_eur']:.2f})")
     print(f"  Battery Discharge    : {summary['battery_discharged_kwh']:.2f} kWh")
     print(f"  Calendar Aging Cost  : EUR {summary['total_calendar_aging_cost_eur']:.4f}")
@@ -639,8 +688,9 @@ def run_mpc_pipeline(mode: str, start_date: str = None, horizon: int = 96, soc_i
     print(f"  Total Degradation    : EUR {summary['total_battery_degradation_cost_eur']:.4f}")
     print(f"  Mean Error Mismatch  : {mismatch_stats['mean_p_error_kw']:+.2f} kW (MAE: {mismatch_stats['mae_p_error_kw']:.2f} kW)")
     print(f"  Operational Cases    : {mismatch_stats['deficit_intervals']} Deficit / {mismatch_stats['surplus_intervals']} Surplus / {mismatch_stats['balanced_intervals']} Balanced")
-    
+
     return combined_metrics
+
 
 def main():
     parser = argparse.ArgumentParser(description="Operational Non-Linear MPC Microgrid Optimizer")
@@ -669,13 +719,14 @@ def main():
         help="Initial battery state of charge (default: 0.50)"
     )
     args = parser.parse_args()
-    
+
     run_mpc_pipeline(
         mode=args.mode,
         start_date=args.date,
         horizon=args.horizon,
         soc_init=args.soc_init
     )
+
 
 if __name__ == "__main__":
     main()

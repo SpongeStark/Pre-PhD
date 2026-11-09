@@ -432,6 +432,31 @@
                         </div>
                     </div>
 
+                    
+                    <!-- 24-Hour Evaluation Date Picker & Preset Case Selector -->
+                    <div class="forecast-action-bar" style="flex-wrap: wrap; gap: 12px; margin-bottom: 12px; background: rgba(15, 23, 42, 0.82); border: 1px solid rgba(56, 189, 248, 0.3);">
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;">
+                            <span class="forecast-bar-label" style="color: #38bdf8; font-weight: 700;">📅 24h Simulation Day (96 Steps):</span>
+                            <select id="mpc-date-preset" class="sim-date-preset" onchange="onPresetDateChange(this.value)" style="background: #0f172a; color: #f8fafc; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 7px 11px; font-family: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; flex: 1; min-width: 320px;">
+                                <option value="2024-10-24">🌟 2024-10-24 (Thu, Test Set) — Sunny Showcase Day [PV Peak: 103.2 kW | Supermarket: 97.6 kW | Lidl EV: 38.4 kW]</option>
+                                <option value="2024-10-05">☀️ 2024-10-05 (Sat, Test Set) — Max PV Energy in Oct-Dec Test [PV Peak: 108.0 kW (443.2 kWh) | Supermarket: 98.4 kW | EV: 18.6 kW]</option>
+                                <option value="2024-10-01">📅 2024-10-01 (Tue, Test Set) — Test Split Start Day [PV Peak: 74.4 kW | Supermarket: 98.8 kW | Lidl EV: 7.2 kW]</option>
+                                <option value="2024-07-30">🔥 2024-07-30 (Tue, Summer Val) — Absolute Max Registered PV (132.0 kW) [PV Peak: 132.0 kW | Supermarket: 91.6 kW | EV: 11.4 kW]</option>
+                                <option value="2024-08-22">⚡ 2024-08-22 (Thu, Summer Val) — High Summer PV + High EV [PV Peak: 129.2 kW | Supermarket: 84.8 kW | Lidl EV: 31.2 kW]</option>
+                                <option value="2022-11-01">🎓 2022-11-01 (Tue, Caltech Test) — Caltech Test Split Start [PV Peak: 56.7 kW | Caltech EV Fleet: 62.6 kW]</option>
+                                <option value="2022-11-11">🚗 2022-11-11 (Fri, Caltech Test) — Caltech High EV Fleet Day [PV Peak: 88.4 kW | Caltech EV Fleet: 71.1 kW]</option>
+                                <option value="custom">✏️ Custom Date (Select in Calendar Picker &rarr;)</option>
+                            </select>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 0.78rem; color: var(--text-muted);">Custom Date:</span>
+                                <input type="date" id="mpc-date-input" class="sim-date-input" value="2024-10-24" min="2022-01-08" max="2024-12-30" onchange="onCustomDateInputChange(this.value)" style="background: #0f172a; color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 6px 10px; font-family: inherit; font-size: 0.83rem; font-weight: 600;">
+                            </div>
+                        </div>
+                        <div class="sim-date-info-banner" style="width: 100%; font-size: 0.78rem; color: #94a3b8; border-top: 1px solid rgba(148, 163, 184, 0.15); padding-top: 6px;">
+                            <strong>Active 24h Window:</strong> <code style="color: #38bdf8;">2024-10-24</code> (96 steps &times; 15 min) &mdash; <strong>Splits:</strong> Train <code>&lt; 2024-01-01</code> | Val <code>2024-01 to 2024-09</code> | Test <code>&ge; 2024-10-01</code> (Caltech 2022: Train <code>&lt; 2022-09-01</code>, Test <code>&ge; 2022-11-01</code>).
+                        </div>
+                    </div>
+
                     <!-- Action Bar for Individual MPC Instances -->
                     <div class="forecast-action-bar">
                         <span class="forecast-bar-label">Execute Operational MPC:</span>
@@ -591,10 +616,35 @@
                 <div class="pipeline-run-box">
                     <div class="run-header">
                         <div>
-                            <h2>⚡ 2-Day Real-Time Secondary Microgrid Controller</h2>
+                            <h2>⚡ 24-Hour Real-Time Secondary Microgrid Controller (96 Steps)</h2>
                             <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
-                                48-Hour closed-loop operational compensation (192 intervals, Deadband &plusmn;0.5 kW, 3-state history filtering, anti-chattering persistence, physical headroom allocation, inverter ramp limiting). Strict zero grid re-injection ($P^{grid} \ge 0$) and perfect DC bus balance.
+                                Unified 24-Hour closed-loop operational compensation (96 intervals of 15 min, Deadband &plusmn;0.5 kW, 3-state history filtering, anti-chattering persistence, physical headroom allocation, inverter ramp limiting). Strict zero grid re-injection ($P^{grid} \ge 0$) and perfect DC bus balance.
                             </p>
+                        </div>
+                    </div>
+
+                    
+                    <!-- 24-Hour Evaluation Date Picker & Preset Case Selector -->
+                    <div class="forecast-action-bar" style="flex-wrap: wrap; gap: 12px; margin-bottom: 12px; background: rgba(15, 23, 42, 0.82); border: 1px solid rgba(56, 189, 248, 0.3);">
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;">
+                            <span class="forecast-bar-label" style="color: #38bdf8; font-weight: 700;">📅 24h Simulation Day (96 Steps):</span>
+                            <select id="rt-date-preset" class="sim-date-preset" onchange="onPresetDateChange(this.value)" style="background: #0f172a; color: #f8fafc; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 7px 11px; font-family: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; flex: 1; min-width: 320px;">
+                                <option value="2024-10-24">🌟 2024-10-24 (Thu, Test Set) — Sunny Showcase Day [PV Peak: 103.2 kW | Supermarket: 97.6 kW | Lidl EV: 38.4 kW]</option>
+                                <option value="2024-10-05">☀️ 2024-10-05 (Sat, Test Set) — Max PV Energy in Oct-Dec Test [PV Peak: 108.0 kW (443.2 kWh) | Supermarket: 98.4 kW | EV: 18.6 kW]</option>
+                                <option value="2024-10-01">📅 2024-10-01 (Tue, Test Set) — Test Split Start Day [PV Peak: 74.4 kW | Supermarket: 98.8 kW | Lidl EV: 7.2 kW]</option>
+                                <option value="2024-07-30">🔥 2024-07-30 (Tue, Summer Val) — Absolute Max Registered PV (132.0 kW) [PV Peak: 132.0 kW | Supermarket: 91.6 kW | EV: 11.4 kW]</option>
+                                <option value="2024-08-22">⚡ 2024-08-22 (Thu, Summer Val) — High Summer PV + High EV [PV Peak: 129.2 kW | Supermarket: 84.8 kW | Lidl EV: 31.2 kW]</option>
+                                <option value="2022-11-01">🎓 2022-11-01 (Tue, Caltech Test) — Caltech Test Split Start [PV Peak: 56.7 kW | Caltech EV Fleet: 62.6 kW]</option>
+                                <option value="2022-11-11">🚗 2022-11-11 (Fri, Caltech Test) — Caltech High EV Fleet Day [PV Peak: 88.4 kW | Caltech EV Fleet: 71.1 kW]</option>
+                                <option value="custom">✏️ Custom Date (Select in Calendar Picker &rarr;)</option>
+                            </select>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 0.78rem; color: var(--text-muted);">Custom Date:</span>
+                                <input type="date" id="rt-date-input" class="sim-date-input" value="2024-10-24" min="2022-01-08" max="2024-12-30" onchange="onCustomDateInputChange(this.value)" style="background: #0f172a; color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 6px 10px; font-family: inherit; font-size: 0.83rem; font-weight: 600;">
+                            </div>
+                        </div>
+                        <div class="sim-date-info-banner" style="width: 100%; font-size: 0.78rem; color: #94a3b8; border-top: 1px solid rgba(148, 163, 184, 0.15); padding-top: 6px;">
+                            <strong>Active 24h Window:</strong> <code style="color: #38bdf8;">2024-10-24</code> (96 steps &times; 15 min) &mdash; <strong>Splits:</strong> Train <code>&lt; 2024-01-01</code> | Val <code>2024-01 to 2024-09</code> | Test <code>&ge; 2024-10-01</code> (Caltech 2022: Train <code>&lt; 2022-09-01</code>, Test <code>&ge; 2022-11-01</code>).
                         </div>
                     </div>
 
@@ -624,7 +674,7 @@
                                     <span class="mpc-stat-val" id="rt-supermarket-sizing">264.46 kWh / 69.31 kW</span>
                                 </div>
                                 <div class="mpc-stat-row">
-                                    <span class="mpc-stat-label">2-Day Grid Cost:</span>
+                                    <span class="mpc-stat-label">24h RT Grid Cost:</span>
                                     <span class="mpc-stat-val val-amber" id="rt-supermarket-grid-cost">EUR 138.33</span>
                                 </div>
                                 <div class="mpc-stat-row">
@@ -662,7 +712,7 @@
                                     <span class="mpc-stat-val" id="rt-ev-sizing">1.29 kWh / 0.65 kW</span>
                                 </div>
                                 <div class="mpc-stat-row">
-                                    <span class="mpc-stat-label">2-Day Grid Cost:</span>
+                                    <span class="mpc-stat-label">24h RT Grid Cost:</span>
                                     <span class="mpc-stat-val val-amber" id="rt-ev-grid-cost">EUR 4.71</span>
                                 </div>
                                 <div class="mpc-stat-row">
@@ -700,7 +750,7 @@
                                     <span class="mpc-stat-val" id="rt-caltech-sizing">31.36 kWh / 14.07 kW</span>
                                 </div>
                                 <div class="mpc-stat-row">
-                                    <span class="mpc-stat-label">2-Day Grid Cost:</span>
+                                    <span class="mpc-stat-label">24h RT Grid Cost:</span>
                                     <span class="mpc-stat-val val-amber" id="rt-caltech-grid-cost">EUR 24.30</span>
                                 </div>
                                 <div class="mpc-stat-row">
@@ -729,11 +779,11 @@
 
                     <!-- RT Visualizations Gallery -->
                     <div class="plots-gallery">
-                        <h3>2-Day Real-Time Closed-Loop Schedules & DC Bus Balance (5-Panel Analysis)</h3>
+                        <h3>24-Hour Real-Time Closed-Loop Schedules & DC Bus Balance (5-Panel Analysis)</h3>
                         <div class="gallery-tabs" id="rt-gallery-tabs">
-                            <button class="gallery-tab active" onclick="switchRTGallery('supermarket')">🏢 Supermarket 2-Day RT</button>
-                            <button class="gallery-tab" onclick="switchRTGallery('ev')">⚡ Lidl EV 2-Day RT</button>
-                            <button class="gallery-tab" onclick="switchRTGallery('caltech')">🎓 Caltech Campus 2-Day RT</button>
+                            <button class="gallery-tab active" onclick="switchRTGallery('supermarket')">🏢 Supermarket 24h RT</button>
+                            <button class="gallery-tab" onclick="switchRTGallery('ev')">⚡ Lidl EV 24h RT</button>
+                            <button class="gallery-tab" onclick="switchRTGallery('caltech')">🎓 Caltech Campus 24h RT</button>
                         </div>
                         <div class="gallery-content">
                             <div class="gallery-img-container" id="rtgallery-supermarket">
@@ -783,14 +833,39 @@
                         </div>
                     </div>
 
+                    
+                    <!-- 24-Hour Evaluation Date Picker & Preset Case Selector -->
+                    <div class="forecast-action-bar" style="flex-wrap: wrap; gap: 12px; margin-bottom: 12px; background: rgba(15, 23, 42, 0.82); border: 1px solid rgba(56, 189, 248, 0.3);">
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;">
+                            <span class="forecast-bar-label" style="color: #38bdf8; font-weight: 700;">📅 24h Simulation Day (96 Steps):</span>
+                            <select id="dss-date-preset" class="sim-date-preset" onchange="onPresetDateChange(this.value)" style="background: #0f172a; color: #f8fafc; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 7px 11px; font-family: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; flex: 1; min-width: 320px;">
+                                <option value="2024-10-24">🌟 2024-10-24 (Thu, Test Set) — Sunny Showcase Day [PV Peak: 103.2 kW | Supermarket: 97.6 kW | Lidl EV: 38.4 kW]</option>
+                                <option value="2024-10-05">☀️ 2024-10-05 (Sat, Test Set) — Max PV Energy in Oct-Dec Test [PV Peak: 108.0 kW (443.2 kWh) | Supermarket: 98.4 kW | EV: 18.6 kW]</option>
+                                <option value="2024-10-01">📅 2024-10-01 (Tue, Test Set) — Test Split Start Day [PV Peak: 74.4 kW | Supermarket: 98.8 kW | Lidl EV: 7.2 kW]</option>
+                                <option value="2024-07-30">🔥 2024-07-30 (Tue, Summer Val) — Absolute Max Registered PV (132.0 kW) [PV Peak: 132.0 kW | Supermarket: 91.6 kW | EV: 11.4 kW]</option>
+                                <option value="2024-08-22">⚡ 2024-08-22 (Thu, Summer Val) — High Summer PV + High EV [PV Peak: 129.2 kW | Supermarket: 84.8 kW | Lidl EV: 31.2 kW]</option>
+                                <option value="2022-11-01">🎓 2022-11-01 (Tue, Caltech Test) — Caltech Test Split Start [PV Peak: 56.7 kW | Caltech EV Fleet: 62.6 kW]</option>
+                                <option value="2022-11-11">🚗 2022-11-11 (Fri, Caltech Test) — Caltech High EV Fleet Day [PV Peak: 88.4 kW | Caltech EV Fleet: 71.1 kW]</option>
+                                <option value="custom">✏️ Custom Date (Select in Calendar Picker &rarr;)</option>
+                            </select>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 0.78rem; color: var(--text-muted);">Custom Date:</span>
+                                <input type="date" id="dss-date-input" class="sim-date-input" value="2024-10-24" min="2022-01-08" max="2024-12-30" onchange="onCustomDateInputChange(this.value)" style="background: #0f172a; color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 6px 10px; font-family: inherit; font-size: 0.83rem; font-weight: 600;">
+                            </div>
+                        </div>
+                        <div class="sim-date-info-banner" style="width: 100%; font-size: 0.78rem; color: #94a3b8; border-top: 1px solid rgba(148, 163, 184, 0.15); padding-top: 6px;">
+                            <strong>Active 24h Window:</strong> <code style="color: #38bdf8;">2024-10-24</code> (96 steps &times; 15 min) &mdash; <strong>Splits:</strong> Train <code>&lt; 2024-01-01</code> | Val <code>2024-01 to 2024-09</code> | Test <code>&ge; 2024-10-01</code> (Caltech 2022: Train <code>&lt; 2022-09-01</code>, Test <code>&ge; 2022-11-01</code>).
+                        </div>
+                    </div>
+
                     <!-- Mode Selector (Mode A vs Mode B) & Execution Options -->
                     <div class="forecast-action-bar" style="flex-wrap: wrap; gap: 14px; margin-bottom: 12px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(6, 182, 212, 0.25);">
                         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                             <span class="forecast-bar-label" style="color: var(--neon-cyan); font-weight: 700;">1. Select Control Mode:</span>
                             <select id="opendss-source-select" onchange="updateOpenDSSModeDescription()" style="background: #0f172a; color: #f8fafc; border: 1px solid rgba(6, 182, 212, 0.45); border-radius: 6px; padding: 8px 12px; font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
-                                <option value="loadshape">Mode A — Local Rule-Based BMS + OpenDSS-G LoadShape.dss (96 Steps)</option>
-                                <option value="rt">Mode B (RT) — Driven by Real-Time Secondary Controller Schedule (rt_timeseries)</option>
-                                <option value="mpc">Mode B (MPC) — Driven by Day-Ahead Forecaster + MPC Schedule (mpc_timeseries)</option>
+                                <option value="rt" selected>Mode B (RT Closed-Loop — Recommended) — OpenDSS-G LoadShape.dss &rarr; Sense &rarr; MPC + 4-Layer RT &rarr; Battery &amp; %Pmpp</option>
+                                <option value="mpc">Mode B (MPC Schedule) — OpenDSS-G LoadShape.dss + Day-Ahead MPC Schedule + %Pmpp Curtailment</option>
+                                <option value="loadshape">Mode A (Autonomous Local BMS) — OpenDSS-G LoadShape.dss + Local Greedy BMS (No MPC Lookahead)</option>
                             </select>
                         </div>
 
@@ -808,7 +883,7 @@
 
                     <!-- Dynamic Mode Explanation Banner -->
                     <div id="opendss-mode-banner" style="background: rgba(6, 182, 212, 0.08); border-left: 3px solid var(--neon-cyan); padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 0.82rem; color: #cbd5e1;">
-                        <strong>Mode A (Local BMS + LoadShape.dss):</strong> OpenDSS-G uses its internal 96-step <code>LoadShape.dss</code> profiles (<code>minterval=15</code>). At each step <i>k</i>, the controller charges the battery from surplus PV (up to 90% SoC), discharges on deficit (down to 20% SoC), and throttles <code>%Pmpp = (P_PV_dispatched / 210.0) &times; 100</code> so <code>P_grid &ge; 0 kW</code>.
+                        <strong>Mode B — Closed-Loop Digital Twin (<code>rt</code>):</strong> Dynamically writes the selected date's actual 96-step PV &amp; Load profiles into OpenDSS-G's <code>LoadShape.dss</code>. At each 15-min step <i>k</i>, Python recovers the physical PV &amp; Load from OpenDSS-G, computes the 4-layer Real-Time compensation against the 24h Day-Ahead MPC schedule, and sends <strong>only</strong> the Battery (<code>%Charge/%Discharge</code>) and PV Curtailment (<code>%Pmpp</code>) commands back to OpenDSS-G.
                     </div>
 
                     <!-- Action Bar for Individual OpenDSS-G Cases -->

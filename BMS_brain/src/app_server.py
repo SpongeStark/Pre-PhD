@@ -72,10 +72,10 @@ SCRIPT_COMMANDS = {
     "rt_ev": [sys.executable, "-u", str(SRC_DIR / "rt_ev.py")],
     "rt_caltech": [sys.executable, "-u", str(SRC_DIR / "rt_caltech.py")],
     "rt_all": [sys.executable, "-u", str(SRC_DIR / "rt_controller.py"), "--mode", "all"],
-    "opendss_supermarket": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "supermarket", "--source", "loadshape"],
-    "opendss_ev": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "ev", "--source", "loadshape"],
-    "opendss_caltech_ev": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "caltech_ev", "--source", "loadshape"],
-    "opendss_all": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "all", "--source", "loadshape"],
+    "opendss_supermarket": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "supermarket", "--source", "rt"],
+    "opendss_ev": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "ev", "--source", "rt"],
+    "opendss_caltech_ev": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "caltech_ev", "--source", "rt"],
+    "opendss_all": [sys.executable, "-u", str(SRC_DIR / "opendss_dstcp_controller.py"), "--mode", "all", "--source", "rt"],
     "mpc_equations_tracker": [sys.executable, "-u", str(SRC_DIR / "mpc_equations_tracker.py")]
 }
 
@@ -507,6 +507,11 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                 return
 
             script = data.get("script")
+            selected_date = data.get("date")
+            if selected_date and isinstance(selected_date, str):
+                selected_date = selected_date.strip()
+            else:
+                selected_date = None
             
             if script == "pipeline":
                 # Check if already running
@@ -542,13 +547,13 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({"error": "Another script is already running."}).encode('utf-8'))
                     return
 
-                # Build dynamic command if running an OpenDSS-G DSTCP script with user-selected options (Mode A / Mode B)
+                # Build dynamic command with user-selected options (Date Picker, Mode A / Mode B)
                 custom_cmd = None
                 if script.startswith("opendss_"):
                     target_mode = script.replace("opendss_", "")
-                    source = data.get("source", "loadshape")
+                    source = data.get("source", "rt")
                     if source not in ("loadshape", "rt", "mpc"):
-                        source = "loadshape"
+                        source = "rt"
                     no_compile = bool(data.get("no_compile", False))
                     show_plots = bool(data.get("show_plots", False))
 
@@ -558,10 +563,16 @@ class BMSDashboardHTTPHandler(BaseHTTPRequestHandler):
                         "--mode", target_mode,
                         "--source", source
                     ]
+                    if selected_date:
+                        custom_cmd.extend(["--date", selected_date])
                     if no_compile:
                         custom_cmd.append("--no-compile")
                     if show_plots:
                         custom_cmd.append("--show-plots")
+                elif (script.startswith("mpc_") or script.startswith("rt_")) and script != "mpc_equations_tracker":
+                    custom_cmd = list(SCRIPT_COMMANDS[script])
+                    if selected_date:
+                        custom_cmd.extend(["--date", selected_date])
                 
                 # Start script execution in a background thread
                 t = threading.Thread(target=run_script_thread, args=(script, None, custom_cmd))
