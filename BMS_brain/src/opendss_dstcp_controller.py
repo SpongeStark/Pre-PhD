@@ -5,23 +5,24 @@ OpenDSS-G Time-Mode Controller via DSTCP Protocol (opendss_dstcp_controller.py)
 Communicates directly with the running OpenDSS-G TCP Server (127.0.0.1:6345)
 using the DSTCP protocol (`openDSSGTCP.py`) — NO COM (`win32com`) interface used.
 
-Closed-Loop 24-Hour (96-Step) Streamflow Architecture:
-  1. Dynamic `LoadShape.dss` Generation:
-     Populates `LoadShape.target_load_shape` and `LoadShape.solar_shape` (npts=96, minterval=15)
-     directly from the actual 24-hour dataset trajectories of the selected `start_date`.
-  2. Sense from OpenDSS-G:
-     Queries the 96-step LoadShape multipliers from OpenDSS-G over DSTCP and recovers
-     3-phase branch powers (`16;` `getLinesPowers`) and bus voltages (`03;` `getVoltsPU`).
-  3. Live Real-Time Control + Actuation:
-     - Mode B (`rt`): Combines OpenDSS-G's physical PV & Load with the 24-hour Day-Ahead MPC
-       Schedule using the 4-Layer Real-Time Secondary Controller (`RealTimeStepCompensator`)
-       to compute step-by-step battery charge/discharge and `%Pmpp` PV curtailment.
-     - Mode A (`loadshape`): Executes local greedy zero-export BMS rules on the same 24-hour
-       OpenDSS-G LoadShape without MPC lookahead.
-     - Sends control commands (`Storage.sto_0` & `PVSystem.pv_1 %Pmpp`) to OpenDSS-G over DSTCP.
+Closed-Loop 24-Hour (96-Step) Native Time-Mode (`stepIn`) Architecture:
+  1. Establish Connection & Configure Time Mode Once:
+     `set time=(0,0) mode=Daily controlmode=time stepsize=15m number=1 maxiterations=50 maxcontroliter=100`
+     OpenDSS-G drives `Load.load_1` (`daily=target_load_shape`) and `PVSystem.pv_1` (`daily=solar_shape`)
+     natively from the 96-step `LoadShape.dss` of the selected `start_date`.
+  2. At each 15-minute step k in 0..95:
+     - Step A (Advance Time): Call `ODGTCP.stepIn()` (`23;`) to advance 15 minutes in OpenDSS-G.
+     - Step B (Request Values from OpenDSS-G):
+       Read 3-phase branch/element powers (`getLinesPowers`), Battery SoC (`? Storage.sto_0.%stored`),
+       and bus voltages in p.u. (`getVoltsPU`).
+     - Step C (Compare with MPC Schedule & Compute RT Control):
+       Compare OpenDSS-G's requested values against row `k` of the 24-hour Day-Ahead MPC Schedule
+       (`mpc_df.iloc[k]`) inside `RealTimeStepCompensator` to compute the compensated battery
+       charging/discharging power and the zero-reinjection `%Pmpp` ceiling.
+     - Step D (Update Battery & %Pmpp in OpenDSS-G):
+       Send `Storage.sto_0` (`state`, `%charge` / `%discharge`) and `PVSystem.pv_1` (`%Pmpp`) commands.
 """
 
-import re
 import json
 import time
 import argparse
@@ -79,11 +80,11 @@ CASE_CONFIGS = {
 
 class OpenDSSGDSTCPController:
     """
-    Closed-Loop Time-Mode Controller that drives OpenDSS-G over TCP/IP (DSTCP protocol on port 6345)
-    across 96 steps (15-minute intervals = 24 hours).
+    Time-Mode Controller that drives OpenDSS-G over TCP/IP (DSTCP protocol on port 6345)
+    using `stepIn()` across 96 steps (15-minute intervals = 24 hours).
     """
 
-    def __init__(self, tcp_ip="127.0.0.1", tcp_port=6345, buffer_size=65536, step_delay=0.75):
+    def __init__(self, tcp_ip="127.0.0.1", tcp_port=6345, buffer_size=80000, step_delay=0.45):
         self.tcp_ip = tcp_ip
         self.tcp_port = tcp_port
         self.buffer_size = buffer_size
@@ -104,6 +105,27 @@ class OpenDSSGDSTCPController:
         """Closes the TCP connection to OpenDSS-G."""
         self.odg.closeTCPConnection()
 
+    def _get_sim_time_sec(self) -> float:
+        """Queries OpenDSS-G simulation clock in seconds via DSTCP Function 01 (`seconds`)."""
+        try:
+            toks = self.odg.getTimeSeconds()
+            if toks:
+                return parse_float_token(toks[0])
+        except Exception:
+            pass
+        return -1.0
+
+    def _advance_substep(self, prev_sim_sec: float) -> float:
+        """Advances OpenDSS-G by one 7.5-minute (450s) stage via stepIn() and verifies clock progression."""
+        curr_sim_sec = prev_sim_sec
+        for attempt in range(5):
+            self.odg.stepIn()
+            time.sleep(self.step_delay if attempt == 0 else 0.40)
+            curr_sim_sec = self._get_sim_time_sec()
+            if curr_sim_sec < 0 or prev_sim_sec < 0 or abs(curr_sim_sec - prev_sim_sec) > 1.0:
+                return curr_sim_sec
+        return curr_sim_sec
+
     def _query_float_array(self, dss_query: str) -> np.ndarray:
         """Queries a bracketed float array from OpenDSS-G via Function 25."""
         resp_tokens = self.odg.sendCommand(dss_query)
@@ -114,9 +136,9 @@ class OpenDSSGDSTCPController:
 
     def sync_case_loadshapes_for_date(self, mode: str, start_date: str = None):
         """
-        Change 2: Dynamically populates the OpenDSS-G `LoadShape.dss` file for `mode`
-        with the actual 96-step (24-hour) consumption and solar PV trajectories of `start_date`,
-        and ensures the corresponding 96-step Day-Ahead MPC schedule is ready.
+        Populates the OpenDSS-G `LoadShape.dss` file for `mode` with the actual 96-step (24-hour)
+        consumption and solar PV trajectories of `start_date`, and ensures the 96-step Day-Ahead
+        MPC schedule (`mpc_timeseries_{mode}.csv`) is ready for step-by-step comparison.
         """
         cfg = CASE_CONFIGS[mode]
         start_date = resolve_valid_start_date(mode, start_date)
@@ -162,27 +184,33 @@ class OpenDSSGDSTCPController:
 
         m_bess = np.round(np.clip((p_dis_sch - p_ch_sch) / bat_kw, -1.0, 1.0), 4)
 
-        str_load = " ".join(f"{val:.6f}" for val in m_load)
-        str_solar = " ".join(f"{val:.6f}" for val in m_solar)
-        str_bess = " ".join(f"{val:.4f}" for val in m_bess)
+        # Duplicate each 15-minute value into two 7.5-minute (450s) sub-steps (npts=192, sinterval=450):
+        # Stage 1 (7.5 min): Sense uncurtailed values | Stage 2 (15.0 min): Actuate & Record results
+        m_load_192 = np.repeat(m_load, 2)
+        m_solar_192 = np.repeat(m_solar, 2)
+        m_bess_192 = np.repeat(m_bess, 2)
+
+        str_load = " ".join(f"{val:.6f}" for val in m_load_192)
+        str_solar = " ".join(f"{val:.6f}" for val in m_solar_192)
+        str_bess = " ".join(f"{val:.4f}" for val in m_bess_192)
 
         loadshape_path = ROOT_DIR / cfg["folder"] / "LoadShape.dss"
         dss_content = (
             f"! --------------------------------------------------------------------------\n"
-            f"! LoadShape.dss - {cfg['title']} | Date: {start_date} (96 steps, minterval=15)\n"
+            f"! LoadShape.dss - {cfg['title']} | Date: {start_date} (192 sub-steps of 7.5m = 24h)\n"
             f"! Actual Peak Load: {load_actual.max():.2f} kW (Nominal: {nom_kw:.1f} kW) | Actual Peak PV: {pv_actual.max():.2f} kW (Pmpp: {self.pv_pmpp:.1f} kW)\n"
             f"! --------------------------------------------------------------------------\n\n"
             f"! 1. Target Demand Profile ({start_date} Actual Load / {nom_kw:.1f} kW)\n"
-            f'New "LoadShape.target_load_shape" npts=96 minterval=15 mult=[{str_load}]\n\n'
+            f'New "LoadShape.target_load_shape" npts=192 sinterval=450 mult=[{str_load}]\n\n'
             f"! 2. Solar PV Generation Shape ({start_date} Actual PV / {self.pv_pmpp:.1f} kW Pmpp)\n"
-            f'New "LoadShape.solar_shape" npts=96 minterval=15 mult=[{str_solar}]\n\n'
+            f'New "LoadShape.solar_shape" npts=192 sinterval=450 mult=[{str_solar}]\n\n'
             f"! 3. Battery Storage Scheduled Dispatch Shape ({start_date} MPC Schedule)\n"
-            f'New "LoadShape.bess_dispatch" npts=96 minterval=15 mult=[{str_bess}]\n'
+            f'New "LoadShape.bess_dispatch" npts=192 sinterval=450 mult=[{str_bess}]\n'
         )
         with open(loadshape_path, "w", encoding="utf-8") as lf:
             lf.write(dss_content)
 
-        print(f"  [LoadShape Sync] Updated {loadshape_path.name} for {start_date} (Peak Load={load_actual.max():.2f} kW, Peak PV={pv_actual.max():.2f} kW)")
+        print(f"  [LoadShape Sync] Updated {loadshape_path.name} for {start_date} (192x7.5m sub-steps = 24h, Peak Load={load_actual.max():.2f} kW, Peak PV={pv_actual.max():.2f} kW)")
         return mpc_df, m_load, m_solar, m_bess, start_date
 
     def run_96_steps(
@@ -195,33 +223,29 @@ class OpenDSSGDSTCPController:
         show_plots: bool = False,
     ) -> dict:
         """
-        Runs the 96-step (15-minute step = 24 hours) closed-loop simulation in OpenDSS-G via DSTCP.
-
-        Parameters:
-          - mode: 'supermarket', 'ev', or 'caltech_ev'
-          - source: 'rt' (Mode B: Day-Ahead MPC Schedule + Live 4-Layer RT Secondary Control),
-                    'mpc' (Mode B: Day-Ahead MPC Schedule with SoC & Zero-Reinjection Guards),
-                    'loadshape' (Mode A: Local Greedy Zero-Export BMS without MPC Lookahead)
-          - start_date: Evaluation date 'YYYY-MM-DD' (default: '2024-10-24' or '2022-11-01')
-          - compile_master: If True, compiles the case's Master.dss remotely via DSTCP
-          - refresh_gui: If True, sends Function 31 (RefreshGUI) on each step
-          - show_plots: If True, calls plt.show() at the end in addition to saving PNGs
+        Runs the 96-step (15-minute step = 24 hours) simulation in OpenDSS-G via DSTCP
+        using the native Time/Daily mode + `stepIn()` workflow (Option A):
+          1. Establish connection & configure `mode=Daily controlmode=time stepsize=15m number=1`
+          2. Loop k = 0..95:
+             - Advance 15 min (`ODGTCP.stepIn()`)
+             - Request values from OpenDSS-G (Powers, Battery %stored, Bus Voltages pu)
+             - Compare with step k of the MPC schedule & compute RT control
+             - Update Battery (`Storage.sto_0`) and PV `%Pmpp` (`PVSystem.pv_1`) in OpenDSS-G
         """
         cfg = CASE_CONFIGS[mode]
         master_path = ROOT_DIR / cfg["folder"] / "Master.dss"
         sizing = load_battery_sizing(mode)
 
-        # 1. Sync LoadShape.dss on disk with the actual 96-step dataset trajectories for `start_date`
-        #    and load the 96-step Day-Ahead MPC schedule for `start_date`.
+        # 1. Sync LoadShape.dss for `start_date` and load the 96-step Day-Ahead MPC schedule
         mpc_df, m_load_arr, m_solar_arr, m_bess_arr, start_date = self.sync_case_loadshapes_for_date(mode, start_date)
 
-        # Instantiate live 4-Layer Real-Time Secondary Controller for closed-loop Mode B ('rt')
+        # Instantiate the 4-Layer Real-Time Secondary Controller for step-by-step comparison
         rt_compensator = RealTimeStepCompensator(
             sizing_params=sizing,
             dt=0.25,
             soc_init=0.50,
             epsilon_tol=0.50,
-            ramp_limit_fraction=0.50,
+            ramp_limit_fraction=1.00,
             initial_p_bat=float(mpc_df["P_dis_sch_kW"].iloc[0] - mpc_df["P_ch_sch_kW"].iloc[0])
         )
 
@@ -231,23 +255,30 @@ class OpenDSSGDSTCPController:
                 self.odg.sendCommand(f'compile "{master_path}"')
                 time.sleep(self.step_delay)
 
-            # Push the 96-step LoadShapes for `start_date` directly into OpenDSS-G memory as well
-            str_load = " ".join(f"{val:.6f}" for val in m_load_arr)
-            str_solar = " ".join(f"{val:.6f}" for val in m_solar_arr)
-            str_bess = " ".join(f"{val:.4f}" for val in m_bess_arr)
-            self.odg.sendCommand(f"Edit LoadShape.target_load_shape npts=96 minterval=15 mult=[{str_load}]")
-            self.odg.sendCommand(f"Edit LoadShape.solar_shape npts=96 minterval=15 mult=[{str_solar}]")
-            self.odg.sendCommand(f"Edit LoadShape.bess_dispatch npts=96 minterval=15 mult=[{str_bess}]")
+            # Update the 192-substep (7.5m = 450s) LoadShapes in OpenDSS-G memory
+            str_load = " ".join(f"{val:.6f}" for val in np.repeat(m_load_arr, 2))
+            str_solar = " ".join(f"{val:.6f}" for val in np.repeat(m_solar_arr, 2))
+            str_bess = " ".join(f"{val:.4f}" for val in np.repeat(m_bess_arr, 2))
+            self.odg.sendCommand(f"Edit LoadShape.target_load_shape npts=192 sinterval=450 mult=[{str_load}]")
+            self.odg.sendCommand(f"Edit LoadShape.solar_shape npts=192 sinterval=450 mult=[{str_solar}]")
+            self.odg.sendCommand(f"Edit LoadShape.bess_dispatch npts=192 sinterval=450 mult=[{str_bess}]")
 
-            # Ensure central inverter switch (SwtControl.sw_inv on Line.line_reactor) is closed
-            self.odg.sendCommand("SwtControl.sw_inv.Action=Close")
-
-            # Configure nominal Load, PV (210 kW / 210 kVA), and Battery parameters
-            self.odg.sendCommand(f"Edit Load.load_1 kW={cfg['nom_kw']} pf={cfg['pf']} daily=target_load_shape")
-            self.odg.sendCommand("Edit PVSystem.pv_1 kVA=210.0 Pmpp=210.0 %Pmpp=100.0 daily=solar_shape")
+            # Configure OpenDSS-G in Daily Time mode with 7.5-minute (450s) sub-step size:
+            # 96 steps x 2 stages (7.5m sense + 7.5m actuate) = 192 sub-steps = 24 hours
             self.odg.sendCommand(
-                f"Edit Storage.sto_0 kWrated={cfg['bat_kw']} kWhrated={cfg['bat_kwh']} %stored=50 dispMode=DEFAULT State=IDLING"
+                "set time=(0,0) mode=Daily controlmode=time stepsize=450s number=1 maxiterations=50 maxcontroliter=100"
             )
+            self.odg.sendCommand("SwtControl.sw_inv.Action=Close")
+            self.odg.sendCommand(
+                f"Edit Load.load_1 kW={cfg['nom_kw']} pf={cfg['pf']} daily=target_load_shape"
+            )
+            self.odg.sendCommand(
+                "Edit PVSystem.pv_1 kVA=210.0 Pmpp=210.0 %Pmpp=100.0 %Cutin=0 %Cutout=0 irradiance=1 daily=solar_shape"
+            )
+            self.odg.sendCommand(
+                f"Edit Storage.sto_0 kWrated={cfg['bat_kw']} kWhrated={cfg['bat_kwh']} %stored=50 %reserve=0 dispMode=DEFAULT state=IDLING"
+            )
+            time.sleep(0.1)
 
             # Read line names (Function 33) and node names (Function 43) once
             line_names = [ln.lower() for ln in self.odg.getLineNames()]
@@ -264,34 +295,27 @@ class OpenDSSGDSTCPController:
             idx_node_bat = node_names.index("n_bat.1") if "n_bat.1" in node_names else 15
             idx_node_load = node_names.index("n_load.1") if "n_load.1" in node_names else 18
 
-            # Recover the 96-step LoadShape arrays directly from OpenDSS-G over DSTCP
-            load_mults = self._query_float_array("? LoadShape.target_load_shape.mult")
-            solar_mults = self._query_float_array("? LoadShape.solar_shape.mult")
-            if len(load_mults) < 96:
-                load_mults = m_load_arr
-            if len(solar_mults) < 96:
-                solar_mults = m_solar_arr
+            # Use 96-step solar_shape multipliers (1 per 15-min interval k)
+            solar_mults = m_solar_arr
 
             n_steps = 96
-            dt_hours = 0.25  # 15 minutes
+            dt_hours = 0.25  # 15 minutes (two 7.5-minute stages)
             nom_kw = cfg["nom_kw"]
-            load_pf = cfg["pf"]
-            tan_phi = np.tan(np.arccos(load_pf)) if load_pf < 1.0 else 0.0
             bat_kw_rated = cfg["bat_kw"]
             bat_kwh_rated = cfg["bat_kwh"]
             soc_min = 20.0
             soc_max = 90.0
 
-            # Tracking arrays
+            # Tracking arrays (96 steps = every 15 minutes after Stage 2 actuation)
             PVkW_avail = []
             PVkW = []
             CurtkW = []
             PctPmpp = []
             EVkW = []       # Load active power (kW)
             PbkW = []       # Battery power (+ discharging, - charging)
-            PCCkW = []      # Grid power at PCC (+ importing from grid, >= 0)
+            PCCkW = []      # Grid power at PCC (+ importing from grid)
             SOC_bkW = []    # Battery SoC (%)
-            PB_t = []       # Net production-consumption balance before curtailment (PV_avail - Load)
+            PB_t = []       # Balance de potencia prod-cons (PV_avail - Load)
 
             PVkV = []
             EVkV = []
@@ -299,45 +323,54 @@ class OpenDSSGDSTCPController:
             PCCkV = []
             COMMONkV = []
 
+            def sum_3ph_term(tokens, line_idx, term=1):
+                base = line_idx * 12 + (0 if term == 1 else 6)
+                return sum(parse_float_token(tokens[base + offset]) for offset in (0, 2, 4))
+
             sim_eb_kwh = 0.50 * bat_kwh_rated
+            prev_sim_sec = self._get_sim_time_sec()
             t0 = time.time()
 
             print(f"\n==========================================================================")
-            print(f" Starting OpenDSS-G 96-Step Closed-Loop DSTCP Control ({cfg['title']})")
-            print(f" Date: {start_date} | TCP: {self.tcp_ip}:{self.tcp_port} | Step: 15m (96 steps) | Mode: {source.upper()}")
+            print(f" Starting OpenDSS-G Two-Stage 96-Step Control ({cfg['title']})")
+            print(f" Date: {start_date} | TCP: {self.tcp_ip}:{self.tcp_port} | Stage 1 (7.5m Sense) + Stage 2 (15m Actuate) | Mode: {source.upper()}")
             print(f"==========================================================================")
 
             for k in range(n_steps):
-                total_min = k * 15
-                h_start = total_min // 60
-                s_start = (total_min % 60) * 60
-                soc_now_pct = (sim_eb_kwh / bat_kwh_rated) * 100.0 if bat_kwh_rated > 0 else 50.0
+                # ------------------------------------------------------------------
+                # STAGE 1 (Minute +7.5m): Advance 7.5m with uncurtailed PV & Sense
+                # ------------------------------------------------------------------
+                soc_start_pct = (sim_eb_kwh / bat_kwh_rated) * 100.0 if bat_kwh_rated > 0 else 50.0
+                self.odg.sendCommand("PVSystem.pv_1.%Pmpp=100.0")
+                self.odg.sendCommand("Storage.sto_0.state=IDLING")
 
-                # --- PHASE 1: Recover Physical Load & Available PV from OpenDSS-G LoadShape ---
-                l_mult = float(load_mults[k])
+                prev_sim_sec = self._advance_substep(prev_sim_sec)
+
+                # Recover uncurtailed available PV and Load measurements from OpenDSS-G at +7.5m
+                lp_probe = self.odg.getLinesPowers()
+                p_pv_probe = max(0.0, sum_3ph_term(lp_probe, idx_line_pv, term=2))
+                p_load_meas = abs(sum_3ph_term(lp_probe, idx_line_load, term=2))
+
                 s_mult = float(solar_mults[k])
-
-                p_load_target = nom_kw * l_mult
                 p_dc_uncurt = self.pv_pmpp * s_mult
                 if p_dc_uncurt < 0.05:
-                    p_pv_raw = 0.0
-                    p_pv_clipped = 0.0
+                    p_pv_shape_k = 0.0
                 else:
                     eta_uncurt = float(np.interp(min(1.0, p_dc_uncurt / self.pv_kva), self.eff_x, self.eff_y))
-                    p_pv_raw = p_dc_uncurt * eta_uncurt
-                    # Stage 1: Native Hardware Clipping at 210.0 kW AC
-                    p_pv_clipped = min(self.pv_kva, p_pv_raw)
+                    p_pv_shape_k = min(self.pv_kva, p_dc_uncurt * eta_uncurt)
+                p_pv_avail_k = max(p_pv_probe, p_pv_shape_k)
+                soc_meas_pct = soc_start_pct
 
-                # --- PHASE 2: Compute Real-Time Control (MPC + RT vs Local Greedy BMS) ---
+                # ------------------------------------------------------------------
+                # CONTROL COMPUTATION: Compare Stage 1 values with Step k of MPC
+                # ------------------------------------------------------------------
+                row_mpc = mpc_df.iloc[k]
+                rt_curt_cmd = 0.0
                 if source == "rt":
-                    # Closed-Loop Mode B ('rt'):
-                    # Feeds OpenDSS-G's physical PV & Load + Day-Ahead MPC Schedule + live SoC
-                    # into the 4-Layer Real-Time Secondary Controller!
-                    row_mpc = mpc_df.iloc[k]
                     rt_out = rt_compensator.compute_step(
                         k=k,
-                        pv_meas_kw=p_pv_clipped,
-                        load_meas_kw=p_load_target,
+                        pv_meas_kw=p_pv_avail_k,
+                        load_meas_kw=p_load_meas,
                         pv_fcast_kw=float(row_mpc["P_PV_forecast_kW"]),
                         load_fcast_kw=float(row_mpc["P_load_forecast_kW"]),
                         sch_ch_kw=float(row_mpc["P_ch_sch_kW"]),
@@ -347,100 +380,79 @@ class OpenDSSGDSTCPController:
                     )
                     p_ch_cmd = rt_out["act_ch_kw"]
                     p_dis_cmd = rt_out["act_dis_kw"]
-
+                    rt_curt_cmd = rt_out["act_curt_kw"]
+                    sim_eb_kwh = rt_out["e_b_end_kwh"]
                 elif source == "mpc":
-                    # Open-Loop MPC Schedule with physical SoC bounds [20%, 90%]
-                    row_mpc = mpc_df.iloc[k]
                     sch_ch = float(row_mpc["P_ch_sch_kW"])
                     sch_dis = float(row_mpc["P_dis_sch_kW"])
-                    max_ch_soc_kw = max(0.0, ((soc_max - soc_now_pct) / 100.0) * bat_kwh_rated / (0.95 * dt_hours))
-                    max_dis_soc_kw = max(0.0, ((soc_now_pct - soc_min) / 100.0) * bat_kwh_rated * 0.95 / dt_hours)
+                    max_ch_soc_kw = max(0.0, ((soc_max - soc_meas_pct) / 100.0) * bat_kwh_rated / (0.95 * dt_hours))
+                    max_dis_soc_kw = max(0.0, ((soc_meas_pct - soc_min) / 100.0) * bat_kwh_rated * 0.95 / dt_hours)
                     p_ch_cmd = min(sch_ch, bat_kw_rated, max_ch_soc_kw)
-                    p_dis_cmd = min(sch_dis, bat_kw_rated, max_dis_soc_kw, p_load_target)
-
+                    p_dis_cmd = min(sch_dis, bat_kw_rated, max_dis_soc_kw, p_load_meas)
+                    sim_eb_kwh = float(np.clip(
+                        sim_eb_kwh + (p_ch_cmd * 0.95 - p_dis_cmd / 0.95) * dt_hours,
+                        (soc_min / 100.0) * bat_kwh_rated,
+                        (soc_max / 100.0) * bat_kwh_rated
+                    ))
                 else:
-                    # Mode A ('loadshape'): Autonomous Local Greedy BMS Rule (No MPC Lookahead)
-                    delta_p = p_pv_clipped - p_load_target
-                    if delta_p > 0.0:
-                        max_ch_soc_kw = max(0.0, ((soc_max - soc_now_pct) / 100.0) * bat_kwh_rated / (0.95 * dt_hours))
-                        p_ch_cmd = min(delta_p, bat_kw_rated, max_ch_soc_kw)
+                    # Mode A ('loadshape'): Local Greedy BMS Rule on requested OpenDSS-G measurements
+                    PBt = p_pv_avail_k - p_load_meas
+                    if PBt >= 0.0:
+                        max_ch_soc_kw = max(0.0, ((soc_max - soc_meas_pct) / 100.0) * bat_kwh_rated / (0.95 * dt_hours))
+                        p_ch_cmd = min(PBt, bat_kw_rated, max_ch_soc_kw)
                         p_dis_cmd = 0.0
                     else:
-                        deficit_kw = -delta_p
-                        max_dis_soc_kw = max(0.0, ((soc_now_pct - soc_min) / 100.0) * bat_kwh_rated * 0.95 / dt_hours)
-                        p_dis_cmd = min(deficit_kw, bat_kw_rated, max_dis_soc_kw)
+                        max_dis_soc_kw = max(0.0, ((soc_meas_pct - soc_min) / 100.0) * bat_kwh_rated * 0.95 / dt_hours)
+                        p_dis_cmd = min(abs(PBt), bat_kw_rated, max_dis_soc_kw)
                         p_ch_cmd = 0.0
+                    sim_eb_kwh = float(np.clip(
+                        sim_eb_kwh + (p_ch_cmd * 0.95 - p_dis_cmd / 0.95) * dt_hours,
+                        (soc_min / 100.0) * bat_kwh_rated,
+                        (soc_max / 100.0) * bat_kwh_rated
+                    ))
 
-                # Stage 2: Enforce Strict Zero Grid Re-Injection (P_grid >= 0) via %Pmpp Curtailment
-                p_local_sink = max(0.0, p_load_target + p_ch_cmd - p_dis_cmd)
-                p_pv_dispatched = min(p_pv_clipped, p_local_sink)
+                soc_end_pct = (sim_eb_kwh / bat_kwh_rated) * 100.0 if bat_kwh_rated > 0 else 50.0
+                soc_mid_pct = 0.5 * (soc_start_pct + soc_end_pct)
 
-                # --- PHASE 3: Send Control Commands to Battery & %Pmpp in OpenDSS-G ---
+                # ------------------------------------------------------------------
+                # STAGE 2 (Minute +15.0m): Send Control Setpoints, stepIn(), & Record
+                # ------------------------------------------------------------------
+                # 1. Pre-load midpoint SoC first so Stage 2's 7.5m integration lands on soc_end_pct,
+                #    then send state + %charge/%discharge (after %stored so state is never reset to IDLING)
+                self.odg.sendCommand(f"Storage.sto_0.%stored={soc_mid_pct:.4f}")
                 p_bat_net_cmd = p_dis_cmd - p_ch_cmd
                 if abs(p_bat_net_cmd) > 1e-4 and bat_kw_rated > 0:
                     if p_bat_net_cmd > 0:
                         pct_dis = min(100.0, (p_bat_net_cmd / bat_kw_rated) * 100.0)
-                        bat_cmd_str = f"Edit Storage.sto_0 dispMode=DEFAULT State=DISCHARGING %Discharge={pct_dis:.4f} %stored={soc_now_pct:.4f}"
+                        self.odg.sendCommand(f"Edit Storage.sto_0 state=DISCHARGING %discharge={pct_dis:.4f}")
                     else:
                         pct_ch = min(100.0, (abs(p_bat_net_cmd) / bat_kw_rated) * 100.0)
-                        bat_cmd_str = f"Edit Storage.sto_0 dispMode=DEFAULT State=CHARGING %Charge={pct_ch:.4f} %stored={soc_now_pct:.4f}"
+                        self.odg.sendCommand(f"Edit Storage.sto_0 state=CHARGING %charge={pct_ch:.4f}")
                 else:
-                    bat_cmd_str = f"Edit Storage.sto_0 dispMode=DEFAULT State=IDLING %stored={soc_now_pct:.4f}"
+                    self.odg.sendCommand("Storage.sto_0.state=IDLING")
 
-                # Compute PV %Pmpp Curtailment command:
-                # - If no solar available: irradiance=0.0, %Pmpp=100.0 (PctPmpp logged as 100.0% unthrottled)
-                # - If uncurtailed (p_pv_dispatched == p_pv_clipped): %Pmpp=100.0 (full MPPT)
-                # - If curtailed (p_pv_dispatched < p_pv_clipped): %Pmpp = (p_pv_dispatched / 210.0) * 100.0
-                if p_pv_clipped < 0.05:
-                    pct_pmpp = 100.0
-                    pv_cmd_str = "Edit PVSystem.pv_1 irradiance=0.0 %Pmpp=100.0"
-                elif p_pv_dispatched < 0.05:
-                    pct_pmpp = 0.0
-                    pv_cmd_str = "Edit PVSystem.pv_1 irradiance=0.0 %Pmpp=100.0"
-                elif p_pv_dispatched >= p_pv_clipped - 1e-3:
-                    pct_pmpp = 100.0
-                    pv_cmd_str = f"Edit PVSystem.pv_1 irradiance={s_mult:.6f} %Pmpp=100.0"
+                # 2. Compute and send %Pmpp ceiling for Stage 2
+                p_local_sink = max(0.0, p_load_meas + p_ch_cmd - p_dis_cmd)
+                need_curtailment = (rt_curt_cmd > 0.10) if source == "rt" else (p_pv_avail_k > p_local_sink + 0.10)
+                if need_curtailment and p_pv_avail_k > p_local_sink:
+                    pct_pmpp = max(0.01, min(100.0, (p_local_sink / self.pv_pmpp) * 100.0))
                 else:
-                    pct_pmpp = max(0.01, min(100.0, (p_pv_dispatched / self.pv_pmpp) * 100.0))
-                    pv_cmd_str = f"Edit PVSystem.pv_1 irradiance={s_mult:.6f} %Pmpp={pct_pmpp:.6f}"
+                    pct_pmpp = 100.0
+                self.odg.sendCommand(f"PVSystem.pv_1.%Pmpp={pct_pmpp:.4f}")
 
-                # Send step state & control commands to OpenDSS-G over DSTCP
-                q_load_target = p_load_target * tan_phi
-                self.odg.sendCommand(f"Edit Load.load_1 kW={p_load_target:.4f} kvar={q_load_target:.4f}")
-                self.odg.sendCommand(bat_cmd_str)
-                self.odg.sendCommand(pv_cmd_str)
-                self.odg.sendCommand(
-                    f"set mode=Daily controlmode=time stepsize=15m number=1 hour={h_start} sec={s_start}"
-                )
+                # 3. Advance the second 7.5m stage via stepIn() to complete the 15-minute step
+                prev_sim_sec = self._advance_substep(prev_sim_sec)
+                if refresh_gui:
+                    self.odg.RefreshGUI()
 
-                def sum_3ph_term(tokens, line_idx, term=1):
-                    base = line_idx * 12 + (0 if term == 1 else 6)
-                    return sum(parse_float_token(tokens[base + offset]) for offset in (0, 2, 4))
+                # 4. Read settled post-actuation powers & voltages at minute +15.0m and record
+                lp_tokens = self.odg.getLinesPowers()
+                p_pcc_meas = sum_3ph_term(lp_tokens, idx_line_pcc, term=1)
+                p_pv_meas = max(0.0, sum_3ph_term(lp_tokens, idx_line_pv, term=2))
+                p_bat_meas = sum_3ph_term(lp_tokens, idx_line_bat, term=2)
+                p_load_meas = abs(sum_3ph_term(lp_tokens, idx_line_load, term=2))
+                soc_meas_pct = soc_end_pct
 
-                # Trigger solve and recover physical branch powers from OpenDSS-G
-                for attempt in range(4):
-                    if attempt == 0:
-                        self.odg.sendCommand("Set Mode=Snapshot")
-                        time.sleep(0.04)
-                        self.odg.sendCommand("solve")
-                        if refresh_gui:
-                            self.odg.RefreshGUI()
-                        time.sleep(self.step_delay)
-                    else:
-                        time.sleep(0.35)
-                        self.odg.sendCommand("solve")
-                        time.sleep(0.45)
-
-                    lp_tokens = self.odg.getLinesPowers()
-                    p_pcc_meas = sum_3ph_term(lp_tokens, idx_line_pcc, term=1)
-                    p_pv_meas = max(0.0, sum_3ph_term(lp_tokens, idx_line_pv, term=2))
-                    p_bat_meas = sum_3ph_term(lp_tokens, idx_line_bat, term=2)
-                    p_load_meas = abs(sum_3ph_term(lp_tokens, idx_line_load, term=2))
-
-                    if abs(p_load_meas - p_load_target) < 0.5 and abs(p_pv_meas - p_pv_dispatched) < 1.0:
-                        break
-
-                # Read node voltages in p.u. via DSTCP Function 03 (`getVoltsPU`)
                 vpu_tokens = self.odg.getVoltsPU()
                 v_pcc = parse_float_token(vpu_tokens[idx_node_pcc])
                 v_common = parse_float_token(vpu_tokens[idx_node_common])
@@ -448,25 +460,17 @@ class OpenDSSGDSTCPController:
                 v_bat = parse_float_token(vpu_tokens[idx_node_bat])
                 v_load = parse_float_token(vpu_tokens[idx_node_load])
 
-                # Update closed-loop battery energy state for next 15-min interval (k + 1)
-                sim_eb_kwh = float(np.clip(
-                    sim_eb_kwh + (p_ch_cmd * 0.95 - p_dis_cmd / 0.95) * dt_hours,
-                    (soc_min / 100.0) * bat_kwh_rated,
-                    (soc_max / 100.0) * bat_kwh_rated
-                ))
-                soc_end_pct = (sim_eb_kwh / bat_kwh_rated) * 100.0 if bat_kwh_rated > 0 else 50.0
-                p_curt_meas = max(0.0, p_pv_clipped - p_pv_meas)
-
-                # Store step data
-                PVkW_avail.append(p_pv_clipped)
+                # Record step metrics
+                p_curt_meas = max(0.0, p_pv_avail_k - p_pv_meas)
+                PVkW_avail.append(p_pv_avail_k)
                 PVkW.append(p_pv_meas)
                 CurtkW.append(p_curt_meas)
                 PctPmpp.append(pct_pmpp)
                 EVkW.append(p_load_meas)
                 PbkW.append(p_bat_meas)
                 PCCkW.append(p_pcc_meas)
-                SOC_bkW.append(soc_end_pct)
-                PB_t.append(p_pv_clipped - p_load_meas)
+                SOC_bkW.append(soc_meas_pct)
+                PB_t.append(p_pv_avail_k - p_load_meas)
 
                 PVkV.append(v_pv)
                 EVkV.append(v_load)
@@ -479,9 +483,9 @@ class OpenDSSGDSTCPController:
                     m_disp = (k * 15) % 60
                     print(
                         f"  Step {k+1:02d}/96 [{h_disp:02d}:{m_disp:02d}] | "
-                        f"Load={p_load_meas:6.2f} kW | PV_avail={p_pv_clipped:6.2f} kW -> "
+                        f"Load={p_load_meas:6.2f} kW | PV_avail={p_pv_avail_k:6.2f} kW -> "
                         f"PV_inj={p_pv_meas:6.2f} kW (Curt={p_curt_meas:6.2f} kW, %Pmpp={pct_pmpp:5.1f}%) | "
-                        f"Bat={p_bat_meas:+6.2f} kW (SoC={soc_end_pct:5.1f}%) | "
+                        f"Bat={p_bat_meas:+6.2f} kW (SoC={soc_meas_pct:5.1f}%) | "
                         f"PCC={p_pcc_meas:+6.2f} kW | V_com={v_common:.4f} pu"
                     )
 
@@ -516,7 +520,7 @@ class OpenDSSGDSTCPController:
 
         min_pcc = float(np.min(PCCkW))
         summary = {
-            "protocol": "DSTCP (127.0.0.1:6345)",
+            "protocol": "DSTCP (127.0.0.1:6345) — Time-Mode stepIn()",
             "mode": mode,
             "title": cfg["title"],
             "date": start_date,
@@ -568,7 +572,7 @@ class OpenDSSGDSTCPController:
         # --- Plot 1: Classic 4-Figure Layout (Power MG, Voltage MG, Balance Prod-Cons, Voltage PCC) ---
         fig1, axes1 = plt.subplots(2, 2, figsize=(14, 9))
         fig1.suptitle(
-            f"{cfg['title']} — OpenDSS-G DSTCP ({date_str} | Mode: {src_str} | 96 Steps = 24h)",
+            f"{cfg['title']} — OpenDSS-G Time-Mode stepIn() ({date_str} | Mode: {src_str} | 96 Steps = 24h)",
             fontsize=13, fontweight="bold"
         )
 
@@ -634,8 +638,8 @@ class OpenDSSGDSTCPController:
         # --- Plot 2: 3-Panel Detailed Co-Simulation Dashboard ---
         fig2, axes2 = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
         fig2.suptitle(
-            f"{cfg['title']} — OpenDSS-G DSTCP ({date_str} | Mode: {src_str}) "
-            f"[0-Reinjection: Min PCC = {summary['min_pcc_kw']:.3f} kW (PASSED)]",
+            f"{cfg['title']} — OpenDSS-G Time-Mode stepIn() ({date_str} | Mode: {src_str}) "
+            f"[Min PCC = {summary['min_pcc_kw']:.3f} kW]",
             fontsize=12.5, fontweight="bold"
         )
 
@@ -676,7 +680,7 @@ class OpenDSSGDSTCPController:
         ax3.grid(True, alpha=0.3)
 
         ax3_r = ax3.twinx()
-        ax3_r.plot(hrs, df["PV_pct_Pmpp"], label="PV Inverter Throttle %Pmpp (%)", color="#e377c2", lw=1.2, ls=":")
+        ax3_r.plot(hrs, df["PV_pct_Pmpp"], label="PV Inverter Ceiling %Pmpp (%)", color="#e377c2", lw=1.2, ls=":")
         ax3_r.set_ylabel("PV %Pmpp (%)")
         ax3_r.set_ylim(0, 105)
         l3_1, lb3_1 = ax3.get_legend_handles_labels()
@@ -698,7 +702,7 @@ class OpenDSSGDSTCPController:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="OpenDSS-G 96-Step Closed-Loop Controller via DSTCP (Port 6345)")
+    parser = argparse.ArgumentParser(description="OpenDSS-G 96-Step Time-Mode (`stepIn`) Controller via DSTCP (Port 6345)")
     parser.add_argument(
         "--mode",
         choices=["supermarket", "ev", "caltech_ev", "all"],
@@ -720,8 +724,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--step-delay",
         type=float,
-        default=0.75,
-        help="Actor synchronization delay per step in seconds (default: 0.75s)"
+        default=0.45,
+        help="Delay after each 7.5m stepIn() sub-step in seconds (default: 0.45s = 0.90s per 15m interval)"
     )
     parser.add_argument(
         "--no-compile",

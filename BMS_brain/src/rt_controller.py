@@ -57,7 +57,7 @@ class RealTimeStepCompensator:
         dt: float = 0.25,
         soc_init: float = 0.50,
         epsilon_tol: float = 0.50,
-        ramp_limit_fraction: float = 0.50,
+        ramp_limit_fraction: float = 1.00,
         initial_p_bat: float = 0.0
     ):
         self.E_B_max = float(sizing_params["E_B_max"])
@@ -153,12 +153,22 @@ class RealTimeStepCompensator:
         pv_gen_dc = (float(pv_meas_kw) / self.eta_pvinverter) * self.eta_mppt
         load_dem_dc = float(load_meas_kw) / self.eta_dcac
         p_phys_net = pv_gen_dc - load_dem_dc  # > 0: physical excess solar, <= 0: physical deficit
+        net_load_dc = max(0.0, load_dem_dc - pv_gen_dc)
 
         avail_dis_energy = max(0.0, ((e_b_start - self.SoC_min * self.E_B_max) / self.dt) * self.eta_d)
         avail_ch_energy = max(0.0, ((self.SoC_max * self.E_B_max - e_b_start) / (self.dt * self.eta_c)))
 
-        if comp_error < -self.epsilon_tol:
-            # === DEFICIT REGIME: Missing generation or demand surge ===
+        if p_phys_net > 0.0:
+            # === PHYSICAL EXCESS SOLAR REGIME (PV_meas > Load_meas on DC Bus) ===
+            # Whenever physical solar exceeds physical load, never discharge the battery
+            # and always absorb the physical solar surplus up to P_B_max and SoC_max
+            # (even if PV_meas < PV_forecast made comp_error negative).
+            target_dis = 0.0
+            avail_ch = max(0.0, min(self.P_B_max, avail_ch_energy))
+            target_ch = min(p_phys_net, avail_ch)
+
+        elif comp_error < -self.epsilon_tol:
+            # === DEFICIT REGIME (No excess solar, and missing generation or demand surge) ===
             p_deficit = abs(comp_error)
 
             # Merit Order Step 1: Immediately cancel/reduce scheduled battery charging
@@ -170,35 +180,28 @@ class RealTimeStepCompensator:
                 target_ch = 0.0
                 p_deficit_rem = p_deficit
 
-            # Merit Order Step 2: Discharge battery to cover remaining deficit
+            # Merit Order Step 2: Discharge battery to cover remaining deficit (up to net uncovered load)
             avail_dis = max(0.0, min(
                 self.P_B_max - sch_dis_kw,
                 avail_dis_energy,
-                load_dem_dc - sch_dis_kw
+                net_load_dc - sch_dis_kw
             ))
             delta_dis = min(p_deficit_rem, avail_dis)
-            target_dis = sch_dis_kw + delta_dis
+            target_dis = min(sch_dis_kw + delta_dis, net_load_dc)
 
         elif comp_error > self.epsilon_tol:
-            # === SURPLUS REGIME: Excess solar or load drop ===
+            # === SURPLUS REGIME (Load drop when PV <= Load; preserve low-price scheduled charging) ===
             p_surplus = comp_error
-
-            if p_phys_net > 0.0:
-                # Subcase A: GENUINE PHYSICAL EXCESS SOLAR (PV > Load on DC Bus)
-                target_dis = 0.0
-                avail_ch = max(0.0, min(self.P_B_max, avail_ch_energy))
-                target_ch = min(p_phys_net, avail_ch)
+            if sch_dis_kw > 0.0:
+                reduced_dis = min(p_surplus, sch_dis_kw)
+                target_dis = min(sch_dis_kw - reduced_dis, net_load_dc)
             else:
-                # Subcase B: LOAD DROP / NO PHYSICAL EXCESS SOLAR
-                if sch_dis_kw > 0.0:
-                    reduced_dis = min(p_surplus, sch_dis_kw)
-                    target_dis = sch_dis_kw - reduced_dis
-                else:
-                    target_dis = 0.0
-                target_ch = min(sch_ch_kw, avail_ch_energy)
+                target_dis = 0.0
+            target_ch = min(sch_ch_kw, avail_ch_energy)
+
         else:
-            # === DEADBAND BALANCED REGIME (|comp_error| <= epsilon_tol) ===
-            target_dis = min(sch_dis_kw, avail_dis_energy, load_dem_dc)
+            # === DEADBAND BALANCED REGIME (|comp_error| <= epsilon_tol and PV <= Load) ===
+            target_dis = min(sch_dis_kw, avail_dis_energy, net_load_dc)
             target_ch = min(sch_ch_kw, avail_ch_energy)
 
         # 6. Layer 4: Inverter Ramp-Rate Limiting on net battery power
@@ -210,7 +213,7 @@ class RealTimeStepCompensator:
         ))
 
         if clamped_p_bat >= 0.0:
-            act_dis = min(clamped_p_bat, avail_dis_energy, load_dem_dc)
+            act_dis = min(clamped_p_bat, avail_dis_energy, net_load_dc)
             act_ch = 0.0
         else:
             act_dis = 0.0
@@ -262,7 +265,7 @@ def run_rt_compensation(
     dt: float = 0.25,
     soc_init: float = 0.50,
     epsilon_tol: float = 0.50,
-    ramp_limit_fraction: float = 0.50,
+    ramp_limit_fraction: float = 1.00,
     start_date: str = ""
 ):
     """
@@ -551,7 +554,7 @@ def run_rt_pipeline(
     horizon: int = 96,
     soc_init: float = 0.50,
     epsilon_tol: float = 0.50,
-    ramp_limit_fraction: float = 0.50
+    ramp_limit_fraction: float = 1.00
 ):
     """
     End-to-end 24-hour (96-step) pipeline:
@@ -673,8 +676,8 @@ def main():
     parser.add_argument(
         "--ramp-limit",
         type=float,
-        default=0.50,
-        help="Ramp limit fraction of P_B_max per interval (default: 0.50)"
+        default=1.00,
+        help="Ramp limit fraction of P_B_max per interval (default: 1.00)"
     )
     args = parser.parse_args()
 
