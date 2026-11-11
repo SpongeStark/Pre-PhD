@@ -933,7 +933,7 @@ async function loadMPCMetrics() {
             if (gcEl && su) gcEl.textContent = `EUR ${su.total_grid_cost_eur.toFixed(2)}`;
             if (dcEl && su) dcEl.textContent = `EUR ${su.total_battery_degradation_cost_eur.toFixed(4)}`;
             if (erEl && ms) erEl.textContent = `${ms.mean_p_error_kw > 0 ? '+' : ''}${ms.mean_p_error_kw.toFixed(2)} kW`;
-            if (csEl && ms) csEl.textContent = `${ms.surplus_intervals} Surplus / ${ms.deficit_intervals} Deficit`;
+            if (csEl && ms) csEl.textContent = `${ms.surplus_intervals} Surplus / ${ms.deficit_intervals} Deficit${sm.date ? ' [' + sm.date + ']' : ''}`;
         }
 
         // Lidl EV
@@ -954,7 +954,7 @@ async function loadMPCMetrics() {
             if (gcEl && su) gcEl.textContent = `EUR ${su.total_grid_cost_eur.toFixed(2)}`;
             if (dcEl && su) dcEl.textContent = `EUR ${su.total_battery_degradation_cost_eur.toFixed(4)}`;
             if (erEl && ms) erEl.textContent = `${ms.mean_p_error_kw > 0 ? '+' : ''}${ms.mean_p_error_kw.toFixed(2)} kW`;
-            if (csEl && ms) csEl.textContent = `${ms.surplus_intervals} Surplus / ${ms.deficit_intervals} Deficit`;
+            if (csEl && ms) csEl.textContent = `${ms.surplus_intervals} Surplus / ${ms.deficit_intervals} Deficit${ev.date ? ' [' + ev.date + ']' : ''}`;
         }
 
         // Caltech EV
@@ -975,7 +975,7 @@ async function loadMPCMetrics() {
             if (gcEl && su) gcEl.textContent = `EUR ${su.total_grid_cost_eur.toFixed(2)}`;
             if (dcEl && su) dcEl.textContent = `EUR ${su.total_battery_degradation_cost_eur.toFixed(4)}`;
             if (erEl && ms) erEl.textContent = `${ms.mean_p_error_kw > 0 ? '+' : ''}${ms.mean_p_error_kw.toFixed(2)} kW`;
-            if (csEl && ms) csEl.textContent = `${ms.surplus_intervals} Surplus / ${ms.deficit_intervals} Deficit`;
+            if (csEl && ms) csEl.textContent = `${ms.surplus_intervals} Surplus / ${ms.deficit_intervals} Deficit${ce.date ? ' [' + ce.date + ']' : ''}`;
         }
 
         // Refresh plots
@@ -1037,7 +1037,7 @@ async function loadRTMetrics() {
             if (degEl && act) degEl.textContent = `EUR ${act.degradation_cost_eur.toFixed(4)}`;
             if (curtEl && act) curtEl.textContent = `${act.curtailed_solar_kwh.toFixed(2)} kWh`;
             if (balEl && dc) balEl.textContent = `${dc.max_residual_mismatch_kw.toFixed(6)} kW [PASSED]`;
-            if (casesEl && mc) casesEl.textContent = `${mc.deficit_intervals} Def / ${mc.surplus_intervals} Sur / ${mc.deadband_intervals} Deadband`;
+            if (casesEl && mc) casesEl.textContent = `${mc.deficit_intervals} Def / ${mc.surplus_intervals} Sur / ${mc.deadband_intervals} DB${sm.date ? ' [' + sm.date + ']' : ''}`;
         }
 
         // Lidl EV
@@ -1060,7 +1060,7 @@ async function loadRTMetrics() {
             if (degEl && act) degEl.textContent = `EUR ${act.degradation_cost_eur.toFixed(4)}`;
             if (curtEl && act) curtEl.textContent = `${act.curtailed_solar_kwh.toFixed(2)} kWh`;
             if (balEl && dc) balEl.textContent = `${dc.max_residual_mismatch_kw.toFixed(6)} kW [PASSED]`;
-            if (casesEl && mc) casesEl.textContent = `${mc.deficit_intervals} Def / ${mc.surplus_intervals} Sur / ${mc.deadband_intervals} Deadband`;
+            if (casesEl && mc) casesEl.textContent = `${mc.deficit_intervals} Def / ${mc.surplus_intervals} Sur / ${mc.deadband_intervals} DB${ev.date ? ' [' + ev.date + ']' : ''}`;
         }
 
         // Caltech EV
@@ -1083,7 +1083,7 @@ async function loadRTMetrics() {
             if (degEl && act) degEl.textContent = `EUR ${act.degradation_cost_eur.toFixed(4)}`;
             if (curtEl && act) curtEl.textContent = `${act.curtailed_solar_kwh.toFixed(2)} kWh`;
             if (balEl && dc) balEl.textContent = `${dc.max_residual_mismatch_kw.toFixed(6)} kW [PASSED]`;
-            if (casesEl && mc) casesEl.textContent = `${mc.deficit_intervals} Def / ${mc.surplus_intervals} Sur / ${mc.deadband_intervals} Deadband`;
+            if (casesEl && mc) casesEl.textContent = `${mc.deficit_intervals} Def / ${mc.surplus_intervals} Sur / ${mc.deadband_intervals} DB${ce.date ? ' [' + ce.date + ']' : ''}`;
         }
 
         refreshRTPlots();
@@ -1110,13 +1110,15 @@ function refreshRTPlots() {
 // ============================================================================
 
 const PRESET_DATE_DESCRIPTIONS = {
-    "2024-10-24": "🌟 <strong>2024-10-24 (Thu, Test Set)</strong> — Sunny Showcase Day: <code>103.2 kW</code> PV Peak (378 kWh) | <code>97.6 kW</code> Supermarket | <code>38.4 kW</code> Lidl EV",
-    "2024-10-05": "☀️ <strong>2024-10-05 (Sat, Test Set)</strong> — Highest PV Energy in Test Set: <code>108.0 kW</code> PV Peak (443.2 kWh) | <code>98.4 kW</code> Supermarket | <code>18.6 kW</code> Lidl EV",
-    "2024-10-01": "📅 <strong>2024-10-01 (Tue, Test Set)</strong> — Official Test Split Start: <code>74.4 kW</code> PV Peak (221.3 kWh) | <code>98.8 kW</code> Supermarket | <code>7.2 kW</code> Lidl EV",
-    "2024-07-30": "🔥 <strong>2024-07-30 (Tue, Summer Val)</strong> — Absolute Max Registered PV: <code>132.0 kW</code> PV Peak (601.5 kWh) | <code>91.6 kW</code> Supermarket | <code>11.4 kW</code> Lidl EV",
-    "2024-08-22": "⚡ <strong>2024-08-22 (Thu, Summer Val)</strong> — High Summer PV + High EV: <code>129.2 kW</code> PV Peak (570.9 kWh) | <code>84.8 kW</code> Supermarket | <code>31.2 kW</code> Lidl EV",
-    "2022-11-01": "🎓 <strong>2022-11-01 (Tue, Caltech 2022 Test)</strong> — Caltech Test Split Start: <code>56.7 kW</code> PV Peak | <code>62.6 kW</code> Caltech EV Fleet",
-    "2022-11-11": "🚗 <strong>2022-11-11 (Fri, Caltech 2022 Test)</strong> — Caltech High EV Fleet Day: <code>88.4 kW</code> PV Peak | <code>71.1 kW</code> Caltech EV Fleet"
+    "2024-10-24": "🌟 <strong>2024-10-24 (Thu, Test Set)</strong> — Sunny Showcase Day (Shared 2024 PV &amp; Tariffs): <code>103.2 kW</code> PV Peak (378.1 kWh) | <code>97.6 kW</code> Supermarket | <code>38.4 kW</code> Lidl EV | <code>60.2 kW</code> Caltech EV",
+    "2024-10-05": "☀️ <strong>2024-10-05 (Sat, Test Set)</strong> — Highest PV Energy in Test Set (Shared 2024 PV &amp; Tariffs): <code>108.0 kW</code> PV Peak (443.2 kWh) | <code>95.2 kW</code> Supermarket | <code>14.0 kW</code> Lidl EV | <code>56.5 kW</code> Caltech EV",
+    "2024-10-01": "📅 <strong>2024-10-01 (Tue, Test Set)</strong> — Official Test Split Start (Shared 2024 PV &amp; Tariffs): <code>74.4 kW</code> PV Peak (324.0 kWh) | <code>98.8 kW</code> Supermarket | <code>7.2 kW</code> Lidl EV | <code>11.0 kW</code> Caltech EV",
+    "2024-07-30": "🔥 <strong>2024-07-30 (Tue, Summer Val)</strong> — Absolute Max Registered PV (Shared 2024 PV &amp; Tariffs): <code>132.0 kW</code> PV Peak (706.6 kWh) | <code>91.6 kW</code> Supermarket | <code>14.4 kW</code> Lidl EV | <code>20.1 kW</code> Caltech EV",
+    "2024-08-22": "⚡ <strong>2024-08-22 (Thu, Summer Val)</strong> — High Summer PV + High EV (Shared 2024 PV &amp; Tariffs): <code>129.2 kW</code> PV Peak (609.4 kWh) | <code>92.8 kW</code> Supermarket | <code>31.2 kW</code> Lidl EV | <code>67.5 kW</code> Caltech EV",
+    "2024-11-01": "🎓 <strong>2024-11-01 (Fri, Test Set)</strong> — High Caltech EV Energy Day (Shared 2024 PV &amp; Tariffs): <code>31.2 kW</code> PV Peak (126.4 kWh) | <code>97.2 kW</code> Supermarket | <code>12.4 kW</code> Lidl EV | <code>62.6 kW</code> Caltech EV",
+    "2024-11-11": "🚗 <strong>2024-11-11 (Mon, Test Set)</strong> — High EV Fleet Day (Shared 2024 PV &amp; Tariffs): <code>44.8 kW</code> PV Peak (158.7 kWh) | <code>99.2 kW</code> Supermarket | <code>49.6 kW</code> Lidl EV | <code>78.0 kW</code> Caltech EV",
+    "2024-12-07": "🏆 <strong>2024-12-07 (Sat, Test Set)</strong> — Caltech Absolute Max EV Peak (Shared 2024 PV &amp; Tariffs): <code>52.4 kW</code> PV Peak (147.2 kWh) | <code>110.4 kW</code> Supermarket | <code>30.4 kW</code> Lidl EV | <code>81.5 kW</code> Caltech EV",
+    "2024-10-26": "☀️ <strong>2024-10-26 (Sat, Test Set)</strong> — Balanced Autumn PV + EV (Shared 2024 PV &amp; Tariffs): <code>58.0 kW</code> PV Peak (232.6 kWh) | <code>95.2 kW</code> Supermarket | <code>19.6 kW</code> Lidl EV | <code>58.9 kW</code> Caltech EV"
 };
 
 function getSelectedSimulationDate() {

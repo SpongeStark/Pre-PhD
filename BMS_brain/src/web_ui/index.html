@@ -438,13 +438,15 @@
                         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;">
                             <span class="forecast-bar-label" style="color: #38bdf8; font-weight: 700;">📅 24h Simulation Day (96 Steps):</span>
                             <select id="mpc-date-preset" class="sim-date-preset" onchange="onPresetDateChange(this.value)" style="background: #0f172a; color: #f8fafc; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 7px 11px; font-family: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; flex: 1; min-width: 320px;">
-                                <option value="2024-10-24">🌟 2024-10-24 (Thu, Test Set) — Sunny Showcase Day [PV Peak: 103.2 kW | Supermarket: 97.6 kW | Lidl EV: 38.4 kW]</option>
-                                <option value="2024-10-05">☀️ 2024-10-05 (Sat, Test Set) — Max PV Energy in Oct-Dec Test [PV Peak: 108.0 kW (443.2 kWh) | Supermarket: 98.4 kW | EV: 18.6 kW]</option>
-                                <option value="2024-10-01">📅 2024-10-01 (Tue, Test Set) — Test Split Start Day [PV Peak: 74.4 kW | Supermarket: 98.8 kW | Lidl EV: 7.2 kW]</option>
-                                <option value="2024-07-30">🔥 2024-07-30 (Tue, Summer Val) — Absolute Max Registered PV (132.0 kW) [PV Peak: 132.0 kW | Supermarket: 91.6 kW | EV: 11.4 kW]</option>
-                                <option value="2024-08-22">⚡ 2024-08-22 (Thu, Summer Val) — High Summer PV + High EV [PV Peak: 129.2 kW | Supermarket: 84.8 kW | Lidl EV: 31.2 kW]</option>
-                                <option value="2022-11-01">🎓 2022-11-01 (Tue, Caltech Test) — Caltech Test Split Start [PV Peak: 56.7 kW | Caltech EV Fleet: 62.6 kW]</option>
-                                <option value="2022-11-11">🚗 2022-11-11 (Fri, Caltech Test) — Caltech High EV Fleet Day [PV Peak: 88.4 kW | Caltech EV Fleet: 71.1 kW]</option>
+                                <option value="2024-10-24">🌟 2024-10-24 (Thu, Test Set) — Sunny Showcase Day [PV: 103.2 kW | Supermarket: 97.6 kW | Lidl EV: 38.4 kW | Caltech EV: 60.2 kW]</option>
+                                <option value="2024-10-05">☀️ 2024-10-05 (Sat, Test Set) — Max PV Energy in Oct-Dec Test [PV: 108.0 kW (443.2 kWh) | Supermarket: 95.2 kW | Lidl EV: 14.0 kW | Caltech EV: 56.5 kW]</option>
+                                <option value="2024-10-01">📅 2024-10-01 (Tue, Test Set) — Test Split Start Day [PV: 74.4 kW | Supermarket: 98.8 kW | Lidl EV: 7.2 kW | Caltech EV: 11.0 kW]</option>
+                                <option value="2024-07-30">🔥 2024-07-30 (Tue, Summer Val) — Absolute Max Registered PV (132.0 kW) [PV: 132.0 kW | Supermarket: 91.6 kW | Lidl EV: 14.4 kW | Caltech EV: 20.1 kW]</option>
+                                <option value="2024-08-22">⚡ 2024-08-22 (Thu, Summer Val) — High Summer PV + High EV [PV: 129.2 kW | Supermarket: 92.8 kW | Lidl EV: 31.2 kW | Caltech EV: 67.5 kW]</option>
+                                <option value="2024-11-01">🎓 2024-11-01 (Fri, Test Set) — Caltech High Energy Day [PV: 31.2 kW | Supermarket: 97.2 kW | Lidl EV: 12.4 kW | Caltech EV: 62.6 kW]</option>
+                                <option value="2024-11-11">🚗 2024-11-11 (Mon, Test Set) — High EV Fleet Day (Lidl &amp; Caltech) [PV: 44.8 kW | Supermarket: 99.2 kW | Lidl EV: 49.6 kW | Caltech EV: 78.0 kW]</option>
+                                <option value="2024-12-07">🏆 2024-12-07 (Sat, Test Set) — Caltech Absolute Max EV Peak [PV: 52.4 kW | Supermarket: 110.4 kW | Lidl EV: 30.4 kW | Caltech EV: 81.5 kW]</option>
+                                <option value="2024-10-26">☀️ 2024-10-26 (Sat, Test Set) — Balanced Autumn PV + EV [PV: 58.0 kW | Supermarket: 95.2 kW | Lidl EV: 19.6 kW | Caltech EV: 58.9 kW]</option>
                                 <option value="custom">✏️ Custom Date (Select in Calendar Picker &rarr;)</option>
                             </select>
                             <div style="display: flex; align-items: center; gap: 6px;">
@@ -629,13 +631,15 @@
                         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;">
                             <span class="forecast-bar-label" style="color: #38bdf8; font-weight: 700;">📅 24h Simulation Day (96 Steps):</span>
                             <select id="rt-date-preset" class="sim-date-preset" onchange="onPresetDateChange(this.value)" style="background: #0f172a; color: #f8fafc; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 7px 11px; font-family: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; flex: 1; min-width: 320px;">
-                                <option value="2024-10-24">🌟 2024-10-24 (Thu, Test Set) — Sunny Showcase Day [PV Peak: 103.2 kW | Supermarket: 97.6 kW | Lidl EV: 38.4 kW]</option>
-                                <option value="2024-10-05">☀️ 2024-10-05 (Sat, Test Set) — Max PV Energy in Oct-Dec Test [PV Peak: 108.0 kW (443.2 kWh) | Supermarket: 98.4 kW | EV: 18.6 kW]</option>
-                                <option value="2024-10-01">📅 2024-10-01 (Tue, Test Set) — Test Split Start Day [PV Peak: 74.4 kW | Supermarket: 98.8 kW | Lidl EV: 7.2 kW]</option>
-                                <option value="2024-07-30">🔥 2024-07-30 (Tue, Summer Val) — Absolute Max Registered PV (132.0 kW) [PV Peak: 132.0 kW | Supermarket: 91.6 kW | EV: 11.4 kW]</option>
-                                <option value="2024-08-22">⚡ 2024-08-22 (Thu, Summer Val) — High Summer PV + High EV [PV Peak: 129.2 kW | Supermarket: 84.8 kW | Lidl EV: 31.2 kW]</option>
-                                <option value="2022-11-01">🎓 2022-11-01 (Tue, Caltech Test) — Caltech Test Split Start [PV Peak: 56.7 kW | Caltech EV Fleet: 62.6 kW]</option>
-                                <option value="2022-11-11">🚗 2022-11-11 (Fri, Caltech Test) — Caltech High EV Fleet Day [PV Peak: 88.4 kW | Caltech EV Fleet: 71.1 kW]</option>
+                                <option value="2024-10-24">🌟 2024-10-24 (Thu, Test Set) — Sunny Showcase Day [PV: 103.2 kW | Supermarket: 97.6 kW | Lidl EV: 38.4 kW | Caltech EV: 60.2 kW]</option>
+                                <option value="2024-10-05">☀️ 2024-10-05 (Sat, Test Set) — Max PV Energy in Oct-Dec Test [PV: 108.0 kW (443.2 kWh) | Supermarket: 95.2 kW | Lidl EV: 14.0 kW | Caltech EV: 56.5 kW]</option>
+                                <option value="2024-10-01">📅 2024-10-01 (Tue, Test Set) — Test Split Start Day [PV: 74.4 kW | Supermarket: 98.8 kW | Lidl EV: 7.2 kW | Caltech EV: 11.0 kW]</option>
+                                <option value="2024-07-30">🔥 2024-07-30 (Tue, Summer Val) — Absolute Max Registered PV (132.0 kW) [PV: 132.0 kW | Supermarket: 91.6 kW | Lidl EV: 14.4 kW | Caltech EV: 20.1 kW]</option>
+                                <option value="2024-08-22">⚡ 2024-08-22 (Thu, Summer Val) — High Summer PV + High EV [PV: 129.2 kW | Supermarket: 92.8 kW | Lidl EV: 31.2 kW | Caltech EV: 67.5 kW]</option>
+                                <option value="2024-11-01">🎓 2024-11-01 (Fri, Test Set) — Caltech High Energy Day [PV: 31.2 kW | Supermarket: 97.2 kW | Lidl EV: 12.4 kW | Caltech EV: 62.6 kW]</option>
+                                <option value="2024-11-11">🚗 2024-11-11 (Mon, Test Set) — High EV Fleet Day (Lidl &amp; Caltech) [PV: 44.8 kW | Supermarket: 99.2 kW | Lidl EV: 49.6 kW | Caltech EV: 78.0 kW]</option>
+                                <option value="2024-12-07">🏆 2024-12-07 (Sat, Test Set) — Caltech Absolute Max EV Peak [PV: 52.4 kW | Supermarket: 110.4 kW | Lidl EV: 30.4 kW | Caltech EV: 81.5 kW]</option>
+                                <option value="2024-10-26">☀️ 2024-10-26 (Sat, Test Set) — Balanced Autumn PV + EV [PV: 58.0 kW | Supermarket: 95.2 kW | Lidl EV: 19.6 kW | Caltech EV: 58.9 kW]</option>
                                 <option value="custom">✏️ Custom Date (Select in Calendar Picker &rarr;)</option>
                             </select>
                             <div style="display: flex; align-items: center; gap: 6px;">
@@ -839,13 +843,15 @@
                         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%;">
                             <span class="forecast-bar-label" style="color: #38bdf8; font-weight: 700;">📅 24h Simulation Day (96 Steps):</span>
                             <select id="dss-date-preset" class="sim-date-preset" onchange="onPresetDateChange(this.value)" style="background: #0f172a; color: #f8fafc; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 6px; padding: 7px 11px; font-family: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; flex: 1; min-width: 320px;">
-                                <option value="2024-10-24">🌟 2024-10-24 (Thu, Test Set) — Sunny Showcase Day [PV Peak: 103.2 kW | Supermarket: 97.6 kW | Lidl EV: 38.4 kW]</option>
-                                <option value="2024-10-05">☀️ 2024-10-05 (Sat, Test Set) — Max PV Energy in Oct-Dec Test [PV Peak: 108.0 kW (443.2 kWh) | Supermarket: 98.4 kW | EV: 18.6 kW]</option>
-                                <option value="2024-10-01">📅 2024-10-01 (Tue, Test Set) — Test Split Start Day [PV Peak: 74.4 kW | Supermarket: 98.8 kW | Lidl EV: 7.2 kW]</option>
-                                <option value="2024-07-30">🔥 2024-07-30 (Tue, Summer Val) — Absolute Max Registered PV (132.0 kW) [PV Peak: 132.0 kW | Supermarket: 91.6 kW | EV: 11.4 kW]</option>
-                                <option value="2024-08-22">⚡ 2024-08-22 (Thu, Summer Val) — High Summer PV + High EV [PV Peak: 129.2 kW | Supermarket: 84.8 kW | Lidl EV: 31.2 kW]</option>
-                                <option value="2022-11-01">🎓 2022-11-01 (Tue, Caltech Test) — Caltech Test Split Start [PV Peak: 56.7 kW | Caltech EV Fleet: 62.6 kW]</option>
-                                <option value="2022-11-11">🚗 2022-11-11 (Fri, Caltech Test) — Caltech High EV Fleet Day [PV Peak: 88.4 kW | Caltech EV Fleet: 71.1 kW]</option>
+                                <option value="2024-10-24">🌟 2024-10-24 (Thu, Test Set) — Sunny Showcase Day [PV: 103.2 kW | Supermarket: 97.6 kW | Lidl EV: 38.4 kW | Caltech EV: 60.2 kW]</option>
+                                <option value="2024-10-05">☀️ 2024-10-05 (Sat, Test Set) — Max PV Energy in Oct-Dec Test [PV: 108.0 kW (443.2 kWh) | Supermarket: 95.2 kW | Lidl EV: 14.0 kW | Caltech EV: 56.5 kW]</option>
+                                <option value="2024-10-01">📅 2024-10-01 (Tue, Test Set) — Test Split Start Day [PV: 74.4 kW | Supermarket: 98.8 kW | Lidl EV: 7.2 kW | Caltech EV: 11.0 kW]</option>
+                                <option value="2024-07-30">🔥 2024-07-30 (Tue, Summer Val) — Absolute Max Registered PV (132.0 kW) [PV: 132.0 kW | Supermarket: 91.6 kW | Lidl EV: 14.4 kW | Caltech EV: 20.1 kW]</option>
+                                <option value="2024-08-22">⚡ 2024-08-22 (Thu, Summer Val) — High Summer PV + High EV [PV: 129.2 kW | Supermarket: 92.8 kW | Lidl EV: 31.2 kW | Caltech EV: 67.5 kW]</option>
+                                <option value="2024-11-01">🎓 2024-11-01 (Fri, Test Set) — Caltech High Energy Day [PV: 31.2 kW | Supermarket: 97.2 kW | Lidl EV: 12.4 kW | Caltech EV: 62.6 kW]</option>
+                                <option value="2024-11-11">🚗 2024-11-11 (Mon, Test Set) — High EV Fleet Day (Lidl &amp; Caltech) [PV: 44.8 kW | Supermarket: 99.2 kW | Lidl EV: 49.6 kW | Caltech EV: 78.0 kW]</option>
+                                <option value="2024-12-07">🏆 2024-12-07 (Sat, Test Set) — Caltech Absolute Max EV Peak [PV: 52.4 kW | Supermarket: 110.4 kW | Lidl EV: 30.4 kW | Caltech EV: 81.5 kW]</option>
+                                <option value="2024-10-26">☀️ 2024-10-26 (Sat, Test Set) — Balanced Autumn PV + EV [PV: 58.0 kW | Supermarket: 95.2 kW | Lidl EV: 19.6 kW | Caltech EV: 58.9 kW]</option>
                                 <option value="custom">✏️ Custom Date (Select in Calendar Picker &rarr;)</option>
                             </select>
                             <div style="display: flex; align-items: center; gap: 6px;">

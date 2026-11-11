@@ -49,18 +49,21 @@ DEFAULT_SIZING = {
     "caltech_ev": {"E_B_max": 31.36, "P_B_max": 14.07, "name": "Caltech Campus EV Fleet (c_ev)"}
 }
 
-# Recommended 24-hour test dates per asset timeline
+# Recommended 24-hour test dates per asset timeline (Unified on 2024 solar & tariff timeline)
 DEFAULT_START_DATES = {
     "supermarket": "2024-10-24",
     "ev": "2024-10-24",
-    "caltech_ev": "2022-11-01",
+    "caltech_ev": "2024-10-24",
 }
 
 
 def resolve_valid_start_date(mode: str, start_date: str = None) -> str:
     """
-    Normalizes start_date so 2024 modes ('supermarket', 'ev') use a valid 2024 date
-    and 2022 mode ('caltech_ev') uses a valid Nov-Dec 2022 date.
+    Normalizes start_date across all three microgrid cases onto the unified 2024 solar & tariff timeline:
+      - 'supermarket' and 'ev' datasets span 2022-01-01 to 2024-12-31 (valid window with 7d lag: 2022-01-08 .. 2024-12-30).
+      - 'caltech_ev' treats its 2022 EV charger demand profile as occurring in 2024 so that all 3 cases
+        share the exact same 2024 Solar PV profile (forecast & actual) and 2024 electricity tariffs on any selected date.
+        If a 2022/2023 date (YYYY-MM-DD) is passed, it is mapped to 2024-MM-DD for 'caltech_ev'.
     """
     if not start_date:
         return DEFAULT_START_DATES.get(mode, "2024-10-24")
@@ -69,16 +72,20 @@ def resolve_valid_start_date(mode: str, start_date: str = None) -> str:
     except Exception:
         return DEFAULT_START_DATES.get(mode, "2024-10-24")
 
-    if mode == "caltech_ev":
-        if ts.year != 2022 or ts < pd.Timestamp("2022-09-15"):
-            fallback = DEFAULT_START_DATES["caltech_ev"]
-            print(f"  [Date Resolver] Note: '{start_date}' is outside Caltech 2022 dataset; using '{fallback}' for caltech_ev.")
-            return fallback
-    else:
-        if ts.year != 2024:
-            fallback = DEFAULT_START_DATES.get(mode, "2024-10-24")
-            print(f"  [Date Resolver] Note: '{start_date}' is outside 2024 dataset; using '{fallback}' for {mode}.")
-            return fallback
+    if mode == "caltech_ev" and ts.year != 2024:
+        try:
+            mapped_ts = ts.replace(year=2024)
+        except ValueError:
+            mapped_ts = pd.Timestamp("2024-02-28")
+        mapped_ts = max(pd.Timestamp("2024-01-08"), min(pd.Timestamp("2024-12-30"), mapped_ts))
+        mapped_str = mapped_ts.strftime("%Y-%m-%d")
+        print(f"  [Date Resolver] Mapped '{start_date}' -> '{mapped_str}' (2024 unified solar & tariff timeline for caltech_ev).")
+        return mapped_str
+
+    if ts < pd.Timestamp("2022-01-08") or ts > pd.Timestamp("2024-12-30"):
+        fallback = DEFAULT_START_DATES.get(mode, "2024-10-24")
+        print(f"  [Date Resolver] Note: '{start_date}' is outside [2022-01-08..2024-12-30]; using '{fallback}' for {mode}.")
+        return fallback
     return ts.strftime("%Y-%m-%d")
 
 
@@ -146,10 +153,10 @@ def get_forecast_and_actual_trajectories(mode: str, start_date: str, horizon: in
     # Target identifiers
     load_target_key = "con" if mode == "supermarket" else ("ev" if mode == "ev" else "caltech")
 
-    # 1. Load PV Forecast and Actual
+    # 1. Load PV Forecast and Actual (Unified 2024 Solar PV profile across all 3 cases)
     df_pv, train_pv_default, _, _, target_col_pv, exog_cols_pv = load_and_preprocess("pv")
-    if mode == "caltech_ev":
-        train_pv = df_pv[df_pv.index < "2022-10-01"]
+    if start_ts.year == 2022:
+        train_pv = df_pv[df_pv.index < "2022-09-01"]
     else:
         train_pv = train_pv_default  # < 2024-01-01
 
@@ -171,11 +178,28 @@ def get_forecast_and_actual_trajectories(mode: str, start_date: str, horizon: in
     time_index = eval_pv.index[:horizon]
 
     # 2. Load Asset Demand Forecast and Actual
-    df_load, train_load, _, _, target_col_load, exog_cols_load = load_and_preprocess(load_target_key)
-    hist_load = df_load[df_load.index < start_ts]
-    eval_load = df_load[df_load.index >= start_ts]
+    # For Caltech EV ('caltech'), treat its 2022 EV charger demand dataset as occurring in 2024
+    # by pulling the corresponding calendar day (MM-DD) from 2022 while keeping 2024 PV & Tariffs.
+    df_load, train_load_default, _, _, target_col_load, exog_cols_load = load_and_preprocess(load_target_key)
+    if load_target_key == "caltech":
+        try:
+            load_ts = start_ts.replace(year=2022)
+        except ValueError:
+            load_ts = pd.Timestamp("2022-02-28")
+        load_ts = max(pd.Timestamp("2022-01-08"), min(pd.Timestamp("2022-12-30"), load_ts))
+        train_load = train_load_default  # < 2022-09-01
+        print(f"  [Caltech 2024 Alignment] Pairing 2024 Solar PV & Tariffs ({start_date}) with Caltech EV profile from {load_ts.strftime('%Y-%m-%d')}.")
+    else:
+        load_ts = start_ts
+        if load_ts.year == 2022:
+            train_load = df_load[df_load.index < "2022-09-01"]
+        else:
+            train_load = train_load_default
+
+    hist_load = df_load[df_load.index < load_ts]
+    eval_load = df_load[df_load.index >= load_ts]
     if len(eval_load) < horizon:
-        raise ValueError(f"Insufficient Load data after {start_date}: found {len(eval_load)} steps, need {horizon}.")
+        raise ValueError(f"Insufficient Load data after {load_ts}: found {len(eval_load)} steps, need {horizon}.")
 
     best_regressor = "LGBM" if load_target_key in ["con", "caltech"] else "XGB"
     forecaster_load = ForecasterRecursive(estimator=get_models(load_target_key)[best_regressor], lags=LAGS)
